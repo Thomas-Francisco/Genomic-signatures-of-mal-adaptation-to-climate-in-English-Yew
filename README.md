@@ -18,29 +18,63 @@ Genomic and climatic data for the range-wide populations were formatting to perf
 - Visualization of the climatic variation across populations
 - Selection of the reference period from which the populations are currently locally adapted (1901-1950)
 - Identification of the main climatic drivers in our dataset by: pre-selection of climatic variables, most important variables to explain the genomic variation using OrdiR2step, remove over-collinear variables and calculate variance inflation factor (VIF).
-- Calculatation of the future climatic data as the mean values from five global climate models (GCMs) under the socio-economic pathway 3-7.0 for the 2041-2060 period. 
+- Calculatation of the future climatic data as the mean values from five global climate models (GCMs) under the socio-economic pathway 3-7.0 for the 2041-2060 period.
 
 ### Phenotypic data clonal bank: soon
 
 ### Climatic data clonal bank: soon
 
+### Population structure: soon
+
 ## Insights into the potental local adaptation to climate
 
-### [5. Variance partitioning](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/Variance_partitioning.html)
+Local adaptation to climate have been investigated by first searching for isolation by environment and then by searching for candidate loci associated with climatic predictors.
 
+### [6. Variance partitioning](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/Variance_partitioning.html)
 
+- RDA and pRDA used to disentangle the influence of demographic history, geography and climate on the genomic variation across populations and searched for potential isolation by environment (IBE) between populations following the procedure of Capblancq & Forester (2021)
+- Several proxies used for geography and demographic history
 
-### [6. Redundancy analyses (RDA) candidate detection](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/Redundancy_analyses_candidate_detection.html)
+### [7. Redundancy analyses (RDA) candidate detection](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/Redundancy_analyses_candidate_detection.html)
 
-### [7. Latent factor mixed models (LFMM) candidate detection](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/LFMM_candidate_detection.html)
+- Identification of candidate loci using the linear method RDA not correcting for population structure
+- Identification of candidate loci using also the pRDA method correcting for population structure using the PCs axes.
+- Dectection of outliers using the Mahalanobis distance method
+- Two sets of thresholds: FDR 10% and FDR 5%
+- Calculation of pvalues for each locus for the RDA method, used in the *outlier selection script*
+- Graphical visualization
 
-### [8. BAYPASS candidate detection](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/BAYPASS_candidate_detection.html)
+### [8. Latent factor mixed models (LFMM) candidate detection](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/LFMM_candidate_detection.html)
 
-### [9. Gradient forest (GF) candidate detection](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/Gradient_forest_candidate_detection.html)
+- Identification of candidate loci using the multivariate approach developped in LFMM2 (Gain et al. 2020)
+- Latent factor used to account for population structure, determination of the number of latent factor required
+- Two sets of thresholds: FDR 10% and FDR 5%
+- Graphical visualization
 
-### [10. Outlier selection](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/Outlier_selection.html)
+### [9. BAYPASS candidate detection](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/BAYPASS_candidate_detection.html)
 
+- Method developped by Mathieu Gautier (2015)
+- Core model used to construct the Omega matrix to account for population structure
+- Standard covariate model (STD) used to calculate the association between SNPs and climatic predictors
+- 5 independent runs
+- Two sets of thresholds: Bayes factor (BF) of 8 and 10
+- Graphical visualization
 
+### [10. Gradient forest (GF) candidate detection](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/Gradient_forest_candidate_detection.html)
+
+- Non- linear machine learning algorithm used as GEA method by Fitzpatrick et al. (2021)
+- GF-raw not accounting for population structure
+- GF-corrected accounting for population structure using the LFMM corrected matrix
+- 5 independent runs
+- Two sets of thresholds: top 5% and 1% of the overlapping SNPs across runs with the highest association with climatic predictors
+
+### [11. Outlier selection](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/Outlier_selection.html)
+
+- Identification of overlapping candidates across at least two GEA methods
+- Candidates in LD within a same contig were removed to only retain one.
+- Random set of SNPs was build
+- Random set of SNPs with the same allelic frequencies of the outliers was also build
+  
 ## Genomic offset predictions
 
 Soon
