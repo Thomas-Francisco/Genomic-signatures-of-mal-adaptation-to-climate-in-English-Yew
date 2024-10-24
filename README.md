@@ -3,6 +3,8 @@ English yew is a long-lived tree widely distributed in Europe from sea level up 
 
 # Scripts
 
+All the scripts associated to the HTML presented below are available in the folder /Scripts
+
 ## Formatting genomic and climatic data
 
 Genomic and climatic data for the range-wide populations were formatted to perform population structure analyses and genomic analyses for outlier detection and genomic offset. Additionally, climatic and phenotypic data from an independent set of populations planted in a clonal bank were used to evaluate the genomic offset forecast."
