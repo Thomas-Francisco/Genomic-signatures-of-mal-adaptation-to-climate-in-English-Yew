@@ -1,0 +1,464 @@
+---
+title: "Redundancy_analyses_candidate_detection"
+author: "Thomas Francisco"
+date: "2024-04-30"
+output:
+  html_document:
+    number_sections: true #titles
+    toc: true #table of content
+    toc_float: true # enable the toc to be on the side of the text, always visible
+    collapsed: True #control if the toc label will only display top level titles
+    toc_depth: 3
+---
+
+
+```{r setup, include=F}
+#rm(list = ls())
+knitr::opts_chunk$set(
+	message = FALSE,
+	warning = FALSE,
+	cache = FALSE
+)
+library(vegan)
+library(dplyr)
+library(robust) #for rdadapt
+library(qvalue) #for rdadapt
+library(ggplot2)
+library(radiant.data) #for row_names_to_columns
+library(textshape) #for colnames_to_row.names
+library(writexl)
+```
+
+# Introduction
+
+**Candidate selection: Redundancy analysis(RDA)**
+
+In this script, we performed outlier detection using Redundancy Analysis (RDA), which does not account for population structure, and partial Redundancy Analysis (pRDA), which does account for population structure.
+RDA is a multivariate canonical analysis that sits between Principal Component Analysis (PCA) and multiple regression. It performs analyses similar to multiple regression; however, RDA handles a matrix of response variables rather than just one. This method is considered canonical because it generates canonical axes similar to those found in PCA.
+The process begins with linear regressions between the explanatory variables and the response variables. We then perform PCA on the fitted values (the results of the linear regressions) to create the canonical axes (RDA axes), to reduce the number of dimensions. These canonical axes represent linear combinations of the explanatory variables. To resume, RDA combines aspects of both PCA and multiple regression, resulting in PCA-like outputs based on fitted values that enable us to extrapolate the model, following a linear relationship.  
+Thus, RDA is a multivariate analysis followinglinear hypothesis.
+
+pRDA is a variant of RDA that corrects for covariates while performing the analysis. The steps are identical to those in RDA, except one additional step is performed firstly. The goal of pRDA is to execute RDA while adjusting for other variables that could influence the response variable and/or the explanatory variables. To achieve this, pRDA first conducts linear regressions between the response variables and the conditioned variables (the additional variables that could affect the response/explanatory variables). It also regresses the explanatory variables against the covariates. Then, the same steps as in RDA are conducted, but on the residuals of both the response and explanatory variables. This approach enables to remove the effects of the conditioned variables on the responses and explanatory variables.
+
+*Sources: Legendre and Legendre 2012; Capblancq 2021; workshop on redundancy analysis by the Quebec Centre for Biodiversity Science (link).*
+
+# Data
+    
+The genomic data is the allelic frequencies at the population level (29 pop) on the imputed dataset (475 indiv, 8616 SNPs) with MAC correction
+```{r data} 
+#genomic data
+load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/data_allelic_frequencies_29pop_adapcon_gentree_475_8616.Rdata")
+
+genomic_matrix <- data_allelic_frequencies_29pop_adapcon_gentree_475_8616  
+
+#climatic/structure/IBD
+load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/GEA_new_var/variance_partitioning/Climatic_data_RDA_pRDA.Rdata") 
+```
+
+## Models
+
+We perform RDA using the genomic matrix corrected for MAC and the scaled climatic variables of interest. For pRDA, we also included the first 2 Pcs axes.
+```{r RDA without correcting, message=FALSE, warning=FALSE}
+#model
+RDA_env <- rda(formula = genomic_matrix ~  Annual_Tc+Diurnal_range_Tc+Tc_Seasonality+Tc_driest_quarter+Annual_P+P_Seasonality, data = Climatic_data_RDA_pRDA, scale=F)
+
+RsquareAdj(RDA_env)
+#other analysis to test the model
+#summary(RDA_env)
+#significativity of the model
+#anova.cca(RDA_env)
+#test the significativity of the axis and the climatic variables using permutation
+#anova.cca(RDA_env, step = 1000, by = "axis")
+#anova.cca(RDA_env, step = 1000, by = "term")
+```
+Interpretation: The R² value of the climatic variables on the genomic matrix is quite important, indicating that conducting Genomic-Environment Association (GEA) analyses on this dataset could be interesting, as it suggests that a significant number of candidate loci may be identified.
+
+```{r pRDA with population correction, message=FALSE, warning=FALSE}
+#model
+pRDA_env <- rda(formula = genomic_matrix ~  Annual_Tc+Diurnal_range_Tc+Tc_Seasonality+Tc_driest_quarter+Annual_P+P_Seasonality + Condition(PC1+PC2), data = Climatic_data_RDA_pRDA, scale=F)
+
+RsquareAdj(pRDA_env)
+
+#other analysis to test the model
+#summary(pRDA_env)
+#significativity of the model
+#anova.cca(pRDA_env)
+#test the significativity of the axis and the climatic variables using permutation
+#anova.cca(pRDA_env, step = 1000, by = "axis")
+#anova.cca(pRDA_env, step = 1000, by = "term")
+```
+
+Next, we conducted candidate selection based on these models. To achieve this, we followed the procedure developped by Capblancq and Forester (2021) and identified outliers based on their positions along a distribution of Mahalanobis distances. These distances are estimated between each locus and the center of the RDA space using a specified number of canonical axes (K).
+
+First, we need to determine the number of canonical axes (RDA axes) that we will retain.
+```{r screeplot, warning=FALSE}
+list_models <- c("RDA","pRDA")
+
+for(i in 1:length(list_models)){
+  
+  model <- get(paste0(list_models[i],"_env"))
+  
+  #screeplot
+plot(model$CCA$eig, option="screeplot")
+
+#in hist
+screeplot_RDA<- screeplot(model, main=list_models[i])
+
+
+#explained variance along each RDA axis
+model$CCA$eig*100/sum(model$CCA$eig)
+
+png(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/Redundancy_analyses/screeplot_",list_models[i],".png"))
+screeplot(model, main=list_models[i])
+dev.off()
+
+}
+
+```
+
+Interpretation: based on these analyses, we will retain the first two RDA and pRDA axes to perform the candidates detection
+
+One interesting aspect of redundancy analyses is that we can visualize the populations (or individuals or genotypes, depending on the scale of our study), loci, and climatic variables in the same space. 
+First, we represented the populations and climatic variables in a biplot within the RDA space.
+```{r population representation RDA space}
+
+list_models <- c("RDA","pRDA")
+
+for(i in 1:length(list_models)){
+  
+   model <- get(paste0(list_models[i],"_env"))
+
+#score along the 2 first RDA axis
+score_climatic_var <- as.data.frame(scores(model, choices=c(1:2), display="bp"))
+
+score_pop_var <- data.frame(model$CCA$u[,c(1,2)])
+
+#meta_data
+meta_data_pop <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Populations/taxus_sample_29pop.csv",h=T,sep=";",dec=",")
+
+#alphabetic order
+meta_data_pop_order <- meta_data_pop[order(meta_data_pop$Population),]
+
+#merge for country info
+Score_population_bis <- rownames_to_column(score_pop_var,"Population")
+score_with_country_info <- merge(Score_population_bis,meta_data_pop_order[,c(1,2)],"Population")
+score_with_country_info$Country <- as.factor(score_with_country_info$Country)
+
+#explained variance along each RDA axis
+explained_variance <- data.frame(model$CCA$eig)*100/sum(model$CCA$eig) # variance of each axis*100 divided by the sum of all the explained variance for all axis
+
+explained_variance_round <- round(explained_variance$model.CCA.eig,digits=1)
+
+
+group_palette <- c("Bosnia"="orangered3", "France"="gold2","Germany"= "darkorchid3", "Greece"="navyblue", "Italy"="turquoise2", "Norway"="green3", "Slovakia"="blue", "Slovenia"="red", "Spain"="black", "Sweden"="gray", "Switzerland"="orange", "UK"="darkgreen")
+
+
+##Biplot with populations and climatic variables along the 2 first RDA axis
+biplot_populations <- ggplot() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = gray(0.80), size = 0.6) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = gray(0.80), size = 0.6) +
+  geom_point(data = score_with_country_info, aes(x = RDA1 * 3, y = RDA2 * 3, colour = Country), size = 2, alpha = 0.8) +
+  geom_segment(data = score_climatic_var, aes(xend = RDA1, yend = RDA2, x = 0, y = 0), colour = "black", size = 0.15, linetype = 1, arrow = arrow(length = unit(0.02, "npc"))) +
+  geom_text(data = score_climatic_var, aes(x=1.1*RDA1, y=1.1*RDA2, label = row.names(score_climatic_var)), size = 2.5)+
+  xlab(paste0("RDA 1 (",explained_variance_round[1],"%)")) + 
+  ylab(paste0("RDA 2 (",explained_variance_round[2],"%)")) +
+  ggtitle(paste0("Biplot ", list_models[i]," Populations")) +
+  scale_color_manual(name = "Countries", values = group_palette, labels = levels(score_with_country_info$Country)) +
+  theme_bw(base_size = 11) +
+  theme(legend.position="right", panel.grid = element_blank(), strip.text = element_text(size=11),plot.title = element_text(hjust = 0.5,color = "Black",face="italic"))+
+  labs(color = "Country")
+
+ print(biplot_populations)
+ 
+ pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/Redundancy_analyses/biplot_",list_models[i],"_populations.pdf"));print(biplot_populations);dev.off()
+}
+```
+
+Interpretation:  
+In the RDA analysis, we observe that populations located at higher altitudes or in the eastern regions are positioned on the left along the first RDA axis, while populations situated at lower altitudes with warmer temperatures are found on the right. This indicates that RDA1 represents a gradient of continentality and altitude.  
+For RDA2, the axis appears to separate populations based on their precipitation levels.
+
+pRDA Interpretation: 
+The axes in the pRDA analysis are more complex to interpret compared to those from RDA. A clear geographic or altitudinal pattern is not evident. The first axis seems to separate populations based on diurnal temperature variation, precipitation seasonality, and temperature during the driest quarter. Meanwhile, the second axis appears to discriminate populations based on temperature seasonality, diurnal temperature range, and annual precipitation and temperature.
+
+
+# Outlier identification
+
+The next step involves performing the genome scan procedure to calculate the Mahalanobis distance. This will allow us to compute the associated q-values and p-values, which will serve as thresholds for candidate selection.
+
+## Pvalues and Qvalues calculation
+
+We used the rdadapt function from Capblancq and Forester (2021):
+```{r genome scan function}
+rdadapt<-function(rda,K)
+{
+  zscores<-rda$CCA$v[,1:as.numeric(K)]
+  resscale <- apply(zscores, 2, scale)
+  resmaha <- covRob(resscale, distance = TRUE, na.action= na.omit, estim="pairwiseGK")$dist
+  lambda <- median(resmaha)/qchisq(0.5,df=K)
+  reschi2test <- pchisq(resmaha/lambda,K,lower.tail=FALSE)
+  qval <- qvalue(reschi2test)
+  q.values_rdadapt<-qval$qvalues
+  return(data.frame(p.values=reschi2test, q.values=q.values_rdadapt))
+}
+```
+
+
+```{r Pvalues models}
+
+for(i in 1:length(list_models)){
+  
+   model <- get(paste0(list_models[i],"_env"))
+
+#Perform the function to calculate the mahalanobis distance and then pvalues/qvalues
+genome_scan <- rdadapt(model,K=2) #the K is equal to the number of RDA axis that we want to use for the selection
+
+assign(paste0("genome_scan_",list_models[i]), genome_scan)
+
+#save the pvalues for each snp for retaining SNPs in LD with the greater signal in the outliers identification script
+pvalues_model_snp <- data.frame(snp_names=colnames(genomic_matrix),pvalues= genome_scan$p.values)
+
+assign(paste0("pvalues_", list_models[i],"_snp"), pvalues_model_snp)
+
+   # Now save the object with a descriptive filename
+   save(list = paste0("pvalues_", list_models[i],"_snp"), file = paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/GEA_new_var/pvalues_", list_models[i], "_snp.Rdata"))
+
+load(paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/GEA_new_var/pvalues_",list_models[i],"_snp.Rdata"))
+
+write_xlsx(get(paste0("pvalues_", list_models[i],"_snp")),paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/GEA_new_var/pvalues_",list_models[i],"_snp.xlsx"))
+
+#plot the distribution of pvalues 
+Histogram_of_Pvalues_RDA<- hist(genome_scan$p.values,
+     main= paste0("Histogram of ",list_models[i]," P-values"),
+     xlab= "P-values")
+
+#save the histogram
+ png(filename=paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/Redundancy_analyses/Histogram_of_Pvalues_",list_models[i],".png"));hist(genome_scan$p.values,
+     main= paste0("Histogram of ",list_models[i],"P-values"),
+     xlab= "P-values");dev.off()
+ 
+}
+```
+
+Interpretation: The distribution of pvalues seems to follow the expected distribution cgaracterized by a peak of values around 0 followed by a relatively constant frequency of higher values. 
+
+
+## Threshold selection
+    
+Using the computed p-values and q-values, we can now proceed with candidate selection. This will involve setting a threshold to identify significant loci based on their statistical significance.
+```{r selection of outliers}
+
+for(i in 1:length(list_models)){
+  
+   genome_scan_model <- get(paste0("genome_scan_",list_models[i]))
+
+# qvalues < 0.05
+thres_qvalues <- 0.05
+
+outliers_qvalues_5perc <- data.frame(Loci = colnames(genomic_matrix)[which(genome_scan_model$q.values<thres_qvalues)], p.value = genome_scan_model$q.values[which(genome_scan_model$q.values<thres_qvalues)], contig = unlist(lapply(strsplit(colnames(genomic_matrix)[which(genome_scan_model$q.values<thres_qvalues)], split = "_"), function(x) x[1])))
+
+nrow(outliers_qvalues_5perc)
+
+assign(paste0("outliers_qvalues_5perc_", list_models[i]), outliers_qvalues_5perc)
+
+# qvalues < 0.10
+thres_qvalues <- 0.10
+
+outliers_qvalues_10perc <- data.frame(Loci = colnames(genomic_matrix)[which(genome_scan_model$q.values<thres_qvalues)], p.value = genome_scan_model$q.values[which(genome_scan_model$q.values<thres_qvalues)], contig = unlist(lapply(strsplit(colnames(genomic_matrix)[which(genome_scan_model$q.values<thres_qvalues)], split = "_"), function(x) x[1])))
+
+nrow(outliers_qvalues_10perc)
+assign(paste0("outliers_qvalues_10perc_", list_models[i]), outliers_qvalues_10perc)
+
+
+#threshold pvalues < 0.05 with Bonferonni correction
+thres_pvalues <- 0.05/length(genome_scan_model$p.values)
+
+outliers_pvalues <- data.frame(Loci = colnames(genomic_matrix)[which(genome_scan_model$p.values<thres_pvalues)], p.value = genome_scan_model$p.values[which(genome_scan_model$p.values<thres_pvalues)], contig = unlist(lapply(strsplit(colnames(genomic_matrix)[which(genome_scan_model$p.values<thres_pvalues)], split = "_"), function(x) x[1])))
+
+nrow(outliers_pvalues)
+assign(paste0("outliers_pvalues_", list_models[i]), outliers_pvalues)
+
+#top 1%
+##add colnames
+#genome_scan_model$snp_names <- colnames(genomic_matrix)
+
+#outliers_top1perc <- genome_scan_model %>% 
+#  arrange(p.values) %>%
+#slice(1:(0.01*nrow(.))) %>%  
+#  as.data.frame()
+
+#assign(paste0("outliers_top1perc_", list_models[i]), outliers_top1perc)
+}
+```
+
+## Graphic representations of the outliers
+
+### FDR 5%
+    
+We can represent both the candidate loci and the presumably neutral loci within the RDA space, incorporating the climatic variables.
+```{r mahalanobis distance FDR 0.05 threshold}
+
+for(i in 1:length(list_models)){
+
+   model <- get(paste0(list_models[i],"_env"))
+   outliers_qvalues_5perc <- get(paste0("outliers_qvalues_5perc_", list_models[i]))
+   
+  
+score_loci <- as.data.frame(scores(model, choices=c(1:2), display="species", scaling="none"))
+score_loci_outliers <- data.frame(names = row.names(score_loci), score_loci)
+score_loci_outliers$FDR5 <- "Neutral"
+score_loci_outliers$FDR5[score_loci_outliers$names%in%outliers_qvalues_5perc$Loci] <- "candidates FDR 5%"
+score_loci_outliers$FDR5 <- factor(score_loci_outliers$FDR5, levels = c("Neutral", "candidates FDR 5%"))
+score_loci_outliers <- score_loci_outliers[order(score_loci_outliers$FDR5),]
+
+score_climatic_var <- as.data.frame(scores(model, choices=c(1:2), display="bp"))
+
+explained_variance <- data.frame(model$CCA$eig)*100/sum(model$CCA$eig) # variance of each axis*100 divided by the sum of all the explained variance for all axis
+explained_variance_round <- round(explained_variance$model.CCA.eig,digits=1)
+
+#Biplot with SNPs and climatic variables along the two first RDA axis. 
+ biplot_outliers<- ggplot() +
+  geom_hline(yintercept=0, linetype="dashed", color = gray(.80), size=0.6) +
+  geom_vline(xintercept=0, linetype="dashed", color = gray(.80), size=0.6) +
+  geom_point(data = score_loci_outliers, aes(x=RDA1*15, y=RDA2*15,colour=FDR5), size = 1.4) +
+  geom_segment(data = score_climatic_var, aes(xend=RDA1, yend=RDA2, x=0, y=0), colour="black", size=0.15, linetype=1, arrow=arrow(length = unit(0.02, "npc"))) +
+  geom_text(data = score_climatic_var, aes(x=1.1*RDA1, y=1.1*RDA2, label = row.names(score_climatic_var)), size = 2.5) +
+  xlab(paste0("RDA 1 (",explained_variance_round[1],"%)")) + 
+  ylab(paste0("RDA 2 (",explained_variance_round[2],"%)")) +
+   ggtitle(paste0(list_models[i]," space: candidates FDR 5%")) +
+  guides(color=guide_legend(title="Locus type")) +
+  scale_color_manual(values = c("lightblue", "#F9A242FF")) +
+  theme_bw(base_size = 11) +
+  theme(legend.position="right", panel.grid = element_blank(), strip.text = element_text(size=11),plot.title = element_text(hjust = 0.5,color = "Black",face="italic"))
+ 
+ print(biplot_outliers)
+ 
+ pdf(paste0("C:/Users/tfrancisco/Documents/Thèse/Results/species/taxus/GEA_new_var/RDA/biplot_outliers_",list_models[i],"_FDR_5perc.pdf"));print(biplot_outliers);dev.off()
+ 
+ 
+}
+```
+
+### FDR 10%
+
+
+We can also visualize the top candidate loci, selected based on a false discovery rate (FDR) of 5%, alongside the presumably neutral loci within the RDA space. 
+```{r mahalanobis distance FDR 0.10 threshold}
+
+for(i in 1:length(list_models)){
+
+   model <- get(paste0(list_models[i],"_env"))
+   outliers_qvalues_10perc <- get(paste0("outliers_qvalues_10perc_", list_models[i]))
+   outliers_qvalues_5perc <- get(paste0("outliers_qvalues_5perc_", list_models[i]))
+
+   
+score_loci <- as.data.frame(scores(model, choices=c(1:2), display="species", scaling="none"))
+score_loci_outliers <- data.frame(names = row.names(score_loci), score_loci)
+score_loci_outliers$FDR5_10 <- "Neutral"
+score_loci_outliers$FDR5_10[score_loci_outliers$names%in%outliers_qvalues_10perc$Loci] <- "candidates FDR 10%"
+score_loci_outliers$FDR5_10[score_loci_outliers$names%in%outliers_qvalues_5perc$Loci] <- "candidates FDR 5%"
+score_loci_outliers$FDR5_10 <- factor(score_loci_outliers$FDR5_10, levels = c("Neutral","candidates FDR 10%","candidates FDR 5%"))
+score_loci_outliers <- score_loci_outliers[order(score_loci_outliers$FDR5_10),]
+
+score_climatic_var <- as.data.frame(scores(model, choices=c(1:2), display="bp"))
+
+explained_variance <- data.frame(model$CCA$eig)*100/sum(model$CCA$eig) # variance of each axis*100 divided by the sum of all the explained variance for all axis
+explained_variance_round <- round(explained_variance$model.CCA.eig,digits=1)
+
+#Biplot with SNPs and climatic variables along the two first RDA axis including the less conservative threshold
+ biplot_outliers_RDA_LC<- ggplot() +
+  geom_hline(yintercept=0, linetype="dashed", color = gray(.80), size=0.6) +
+  geom_vline(xintercept=0, linetype="dashed", color = gray(.80), size=0.6) +
+  geom_point(data = score_loci_outliers, aes(x=RDA1*15, y=RDA2*15,colour=FDR5_10), size = 1.4) +
+  geom_segment(data = score_climatic_var, aes(xend=RDA1, yend=RDA2, x=0, y=0), colour="black", size=0.15, linetype=1, arrow=arrow(length = unit(0.02, "npc"))) +
+  geom_text(data = score_climatic_var, aes(x=1.1*RDA1, y=1.1*RDA2, label = row.names(score_climatic_var)), size = 2.5) +
+  xlab(paste0("RDA 1 (",explained_variance_round[1],"%)")) + 
+  ylab(paste0("RDA 2 (",explained_variance_round[2],"%)")) +
+   ggtitle(paste0(list_models[i]," space: candidates FDR 10%")) +
+  guides(color=guide_legend(title="Locus type")) +
+  scale_color_manual(values = c("lightblue","darkgreen","orange")) +
+  theme_bw(base_size = 11) +
+  theme(legend.position="right", panel.grid = element_blank(), strip.text = element_text(size=11),plot.title = element_text(hjust = 0.5,color = "Black",face="italic"))
+ 
+ print(biplot_outliers_RDA_LC)
+ 
+  pdf(paste0("C:/Users/tfrancisco/Documents/Thèse/Results/species/taxus/GEA_new_var/RDA/biplot_outliers_",list_models[i],"_FDR_10perc.pdf"));print(biplot_outliers);dev.off()
+  
+}
+```
+## Save candidates
+
+We can save the candidates: 
+
+### FDR 5% candidates 
+
+```{r save FDR 5% candidates}
+for(i in 1:length(list_models)){
+
+  outliers_FDR5perc_T_Adapcon_gentree <- get(paste0("outliers_qvalues_5perc_", list_models[i]))[,-3]
+  
+  assign(paste0("outliers_",list_models[i],"_FDR5perc_T_Adapcon_gentree"),outliers_FDR5perc_T_Adapcon_gentree)
+  
+  # Now save the object with a descriptive filename
+   save(list = paste0("outliers_",list_models[i],"_FDR5perc_T_Adapcon_gentree"), file = paste0("C:/Users/tfrancisco/Documents/Thèse/Results/species/taxus/GEA_new_var/outliers/outliers_",list_models[i],"FDR5perc_T_Adapcon_gentree.Rdata"))
+
+write_xlsx(get(paste0("outliers_",list_models[i],"_FDR5perc_T_Adapcon_gentree")),paste0("C:/Users/tfrancisco/Documents/Thèse/Results/species/taxus/GEA/outliers/outliers_",list_models[i],"_FDR5perc_T_Adapcon_gentree.xlsx"))
+}
+```
+
+### FDR 10% candidates 
+
+```{r save FDR 10% candidates}
+
+for(i in 1:length(list_models)){
+
+  outliers_FDR10perc_T_Adapcon_gentree <- get(paste0("outliers_qvalues_10perc_", list_models[i]))[,-3]
+  
+  assign(paste0("outliers_",list_models[i],"_FDR10perc_T_Adapcon_gentree"),outliers_FDR10perc_T_Adapcon_gentree)
+  
+  # Now save the object with a descriptive filename
+   save(list = paste0("outliers_",list_models[i],"_FDR10perc_T_Adapcon_gentree"), file = paste0("C:/Users/tfrancisco/Documents/Thèse/Results/species/taxus/GEA_new_var/outliers/outliers_",list_models[i],"FDR10perc_T_Adapcon_gentree.Rdata"))
+
+write_xlsx(get(paste0("outliers_",list_models[i],"_FDR10perc_T_Adapcon_gentree")),paste0("C:/Users/tfrancisco/Documents/Thèse/Results/species/taxus/GEA/outliers/outliers_",list_models[i],"_FDR10perc_T_Adapcon_gentree.xlsx"))
+}
+```
+
+
+  
+     
+   
+   
+   
+
+**What follows is a draft detailing another method not used in our study for identifying outliers based on the extremeness of loadings along the RDA axes , as described by Forester et al. (2018).**
+
+We also performed outlier detection based on the loadings of loci along the RDA axes to identify extreme loadings for each retained axis, following the methodology outlined by Forester et al. (2018).
+
+```{r extremness along RDA axis}
+load.rda <- scores(RDA_env, choices=c(1:3), display="species")
+
+hist(load.rda[,1], main="Loadings on RDA1")
+hist(load.rda[,2], main="Loadings on RDA2")
+```
+
+
+Function from Forester et al. (2018).
+```{r perform the detection }
+#function to do it
+outliers_function <- function(x,z){
+  lims <- mean(x) + c(-1, 1) * z * sd(x)     # find loadings +/-z sd from mean loading     
+  x[x < lims[1] | x > lims[2]]               # locus names in these tails
+}
+
+cand1 <- data.frame(outliers_function(load.rda[,1],3)) # 3
+colnames(cand1) <- c("pvalues"); cand1$snp_names <- row.names(cand1)
+cand2 <- data.frame(outliers_function(load.rda[,2],3)) # 51
+colnames(cand2) <- c("pvalues"); cand2$snp_names <- row.names(cand2)
+
+#names of the outliers
+outliers_extremness <- rbind (cand1,cand2)
+
+nrow(outliers_extremness)
+```
+
+

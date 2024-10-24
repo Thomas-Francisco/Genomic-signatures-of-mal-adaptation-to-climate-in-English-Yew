@@ -1,0 +1,675 @@
+---
+title: "Outlier_selection"
+author: "Thomas Francisco"
+date: "2024-04-30"
+output:
+  html_document:
+    number_sections: true #titles
+    toc: true #table of content
+    toc_float: true # enable the toc to be on the side of the text, always visible
+    collapsed: True #control if the toc label will only display top level titles
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	message = FALSE,
+	warning = FALSE,
+	cache = FALSE
+)
+library(VennDiagram)
+library(dplyr)
+library(genetics)#LD function
+library(corrplot)
+library(tidyr)
+library(writexl)
+
+```
+
+# Introduction
+
+This script enables to visualize and select the set of outliers loci to be used to compute genomic offset. To select candidates SNPs, we performed six GEA methods to detect SNPs potentially linked with climatic variables: RDA, pRDA, BAYPASS, LFMM and GF-raw, GF-corrected  
+  
+Each of these methods provides a set of candidate SNPs. To select our outliers, we will retain only those candidates identified by at least two methods and not in high linkage disequilibrium (LD). 
+We performed the outlier detection using less conservative or more conservative set of thresholds:   
+- less conservative: FDR < 10%, top 5%, and BF > 8 later called LC.    
+- more conservative: FDR < 5%, top 1%, and BF > 10 later called MC.  
+
+# Load candidates SNPs 
+
+```{r load data}
+#names of the files
+##LC
+list_data_LC <- c("outliers_RDA_FDR10perc_T_Adapcon_gentree","outliers_pRDA_FDR10perc_T_Adapcon_gentree","outliers_T_adapcon_gentree_BAYPASS_BF_8","outliers_T_adapcon_gentree_LFMM_10perc","outliers_rank_based_top5perc_GF_raw","outliers_rank_based_top5perc_GF_corrected")
+
+##MC
+list_data_MC <- c("outliers_RDA_FDR5perc_T_Adapcon_gentree","outliers_pRDA_FDR5perc_T_Adapcon_gentree","outliers_T_adapcon_gentree_BAYPASS_BF_10","outliers_T_adapcon_gentree_LFMM_5perc","outliers_rank_based_top1perc_GF_raw","outliers_rank_based_top1perc_GF_corrected")
+
+#name of the output
+names_set <- c("RDA","pRDA","BAYPASS","LFMM","GF_raw","GF_corrected")
+
+#load data
+for(x in 1:length(names_set)){
+  
+  for(i in 1:length(list_data_LC))
+  set_LC <- list_data_LC[x]
+  load(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/",set_LC,".Rdata"))
+  name <- names_set[x]
+assign(paste0(name,"_set_LC"),get(set_LC))  
+
+set_MC <- list_data_MC[x]
+  load(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/",set_MC,".Rdata"))
+  name <- names_set[x]
+assign(paste0(name,"_set_MC"),get(set_MC))  
+}
+```
+
+We need to merge every set in a list
+```{r format sets}
+  #list of candidates
+list_candidates_LC<-list(RDA=RDA_set_LC[,1],pRDA=pRDA_set_LC[,1],BAYPASS=BAYPASS_set_LC[,1],LFMM=LFMM_set_LC[,1],GF_raw=GF_raw_set_LC,GF_corrected=GF_corrected_set_LC)
+
+list_candidates_MC<-list(RDA=RDA_set_MC[,1],pRDA=pRDA_set_MC[,1],BAYPASS=BAYPASS_set_MC[,1],LFMM=LFMM_set_MC[,1],GF_raw=GF_raw_set_MC,GF_corrected=GF_corrected_set_MC)
+```
+  
+
+```{r all_outliers}
+#list snps_names
+##LC
+list_all_candidates_snps_LC <- unlist(list_candidates_LC)
+list_all_candidates_snps_LC <- data.frame(list_all_candidates_snps_LC)
+write_xlsx(list_all_candidates_snps_LC,path="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/set/list_all_candidates_snps_LC.xlsx") 
+
+##MC
+list_all_candidates_snps_MC <- unlist(list_candidates_MC)
+list_all_candidates_snps_MC <- data.frame(list_all_candidates_snps_MC)
+write_xlsx(list_all_candidates_snps_MC,path="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/set/list_all_candidates_snps_MC.xlsx") 
+colnames(RDA_set_MC) <- c("Loci","p.value")
+colnames(pRDA_set_MC) <- c("Loci","p.value")
+
+
+```
+
+# Plot to visualize the overlapping candidates SNPs
+
+## Vendiagram plot
+
+we can represent in a venn diagram the sets to visualize the overlapping candidates (not shown here)
+```{r venn.diagram, echo=FALSE, eval=FALSE}
+ # venn.diagram(x = list_candidates,
+ #       category.names = c("RDA" ,"pRDA","BAYPASS","LFMM","GF_raw","GF_corrected"),
+ #       filename = "C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/figure/venn_diagramm_candidates_relax_set.png",fill = c("#45B6AA","#D45176","#91A6CE","#86AD4C","#33A5CE","pink"),
+#alpha = 0.30,
+#print.mode=c("raw"),
+#imagetype="png",
+#output=TRUE,
+#margin = 0.1,  # Adjust the margins
+#                    cat.fontface = "italic",  # Optional: Make category names italic
+#                    cat.fontsize = 16,
+#                    main= "Venn Diagram across GEAs methods",
+#                    main.fontface = "bold")
+
+```
+
+```{r eval=FALSE, echo=FALSE, eval=FALSE}
+#ggVennDiagram(list_candidates, 
+#              category.names = c("RDA", "pRDA", "BAYPASS", "LFMM", "GF_raw", "GF_corrected"),
+#              fill = c("#45B6AA", "#D45176", "#91A6CE", "#86AD4C", "#33A5CE", "pink"),
+#              alpha = 0.30,
+#              label = "count") + # Show counts, not percentages
+#  ggtitle("Venn Diagram across GEAs methods") +
+#  theme(legend.position = "right",
+#        legend.text = element_text(size = 12)) +
+#  theme_void() # Remove percentage information
+```
+
+
+```{r venn diagram plot, echo=FALSE, eval=FALSE}
+#grid.newpage()
+#ven <- venn.diagram(x = list_candidates,
+#        category.names = c("RDA" ,"pRDA","BAYPASS","LFMM","GF"),
+#        filename = NULL,fill = c("#45B6AA","#D45176","#91A6CE","#86AD4C","#33A5CE"),
+#alpha = 0.30,print.mode=c("raw"),margin = 0.1,  # Adjust the margins
+#                    cat.fontface = "italic",  # Optional: Make category names italic
+#                    cat.fontsize = 16,
+#                    main= "Venn Diagram across GEAs methods",
+#                    main.fontface = "bold")  # Optional: Adjust font size)
+#grid.draw(ven)
+```
+
+## Upset plot
+
+The UpSet graph is more practical because the Venn diagram can only plot up to five circles, while we have six sets. With the ggVennDiagram function, the results can become cluttered, making it difficult to interpret. The UpSet graph also allows us to represent only the overlaps, omitting the zero overlaps. This creates a simpler and more informative graph.
+
+```{r upset graph more practical than the venn diagram}
+
+list_threshold <- c("LC","MC")
+
+for(i in 1:length(list_threshold)){
+  
+  threshold <- list_threshold[i]
+#create an object with all the snps to then create a df 0/1 for each method for all the snps to plot the upset graph
+all_snps <- unique(c(get(paste0("RDA_set_",threshold))[,1],get(paste0("pRDA_set_",threshold))[,1],get(paste0("BAYPASS_set_",threshold))[,1],get(paste0("LFMM_set_",threshold))[,1],get(paste0("GF_raw_set_",threshold)),get(paste0("GF_corrected_set_",threshold))))
+
+#df with 0 the snp is not identified by the method and 1 it is
+snp_df <- data.frame(
+  SNP = all_snps,
+  RDA = as.integer(all_snps %in% get(paste0("RDA_set_",threshold))$Loci),
+  pRDA = as.integer(all_snps %in% get(paste0("pRDA_set_",threshold))$Loci),
+  LFMM = as.integer(all_snps %in% get(paste0("LFMM_set_",threshold))$SNP),
+  BAYPASS = as.integer(all_snps %in% get(paste0("BAYPASS_set_",threshold))$Loci),
+  GF_raw = as.integer(all_snps %in% get(paste0("GF_raw_set_",threshold))),
+  GF_corrected = as.integer(all_snps %in% get(paste0("GF_corrected_set_",threshold)))
+)
+
+# Create the UpSet plot
+plot <- UpSetR::upset(snp_df, 
+      sets = c("RDA", "pRDA", "LFMM", "BAYPASS", "GF_raw", "GF_corrected"),
+      main.bar.color = "#45B6AA",
+      matrix.color = "#D45176",
+      keep.order = T)
+
+print(plot)
+
+#save 
+pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/figure/upset_plot_",threshold,"_set.pdf"));UpSetR::upset(snp_df, 
+      sets = c("RDA", "pRDA", "LFMM", "BAYPASS", "GF_raw", "GF_corrected"),
+      main.bar.color = "#45B6AA",
+      matrix.color = "#D45176",
+      keep.order = T);dev.off()
+}
+
+```
+
+# Set of outlier SNPs
+
+## Overlapping SNPs by at least 2 GEA methods
+
+Now, we can make a dataframe with only the overlapping candidate of at least 2 methods: 
+```{r Overlapping snp of at least 2 methods}
+
+for(i in 1:length(list_threshold)){
+  
+  threshold <- list_threshold[i]
+  
+comm_RDA_pRDA <- data.frame(outliers=get(paste0("list_candidates_",threshold))[c("RDA","pRDA")] %>% Reduce(intersect, .))
+comm_RDA_BAYPASS <- data.frame(outliers=get(paste0("list_candidates_",threshold))[c("RDA","BAYPASS")] %>% Reduce(intersect, .))
+comm_RDA_GF_raw <- data.frame(outliers=get(paste0("list_candidates_",threshold))[c("GF_raw","RDA")] %>% Reduce(intersect, .))
+comm_RDA_LFMM <- data.frame(outliers=get(paste0("list_candidates_",threshold))[c("LFMM","RDA")] %>% Reduce(intersect, .))
+comm_pRDA_BAYPASS <- data.frame(outliers=get(paste0("list_candidates_",threshold))[c("pRDA","BAYPASS")] %>% Reduce(intersect, .))
+comm_pRDA_GF_raw <- data.frame(outliers=get(paste0("list_candidates_",threshold))[c("GF_raw","pRDA")] %>% Reduce(intersect, .))
+comm_pRDA_LFMM <- data.frame(outliers=get(paste0("list_candidates_",threshold))[c("LFMM","pRDA")] %>% Reduce(intersect, .))
+comm_BAYPASS_GF_raw <- data.frame(outliers=get(paste0("list_candidates_",threshold))[c("GF_raw","BAYPASS")] %>% Reduce(intersect, .))
+comm_BAYPASS_LFMM <- data.frame(outliers=get(paste0("list_candidates_",threshold))[c("LFMM","BAYPASS")] %>% Reduce(intersect, .))
+comm_GF_raw_LFMM <- data.frame(outliers=get(paste0("list_candidates_",threshold))[c("GF_raw","LFMM")] %>% Reduce(intersect, .))
+comm_GF_corrected_LFMM <- data.frame(outliers=get(paste0("list_candidates_",threshold))[c("GF_corrected","LFMM")] %>% Reduce(intersect, .))
+comm_BAYPASS_GF_corrected <- data.frame(outliers=get(paste0("list_candidates_",threshold))[c("GF_corrected","BAYPASS")] %>% Reduce(intersect, .))
+comm_pRDA_GF_corrected <- data.frame(outliers=get(paste0("list_candidates_",threshold))[c("GF_corrected","pRDA")] %>% Reduce(intersect, .))
+comm_RDA_GF_corrected <- data.frame(outliers=get(paste0("list_candidates_",threshold))[c("GF_corrected","RDA")] %>% Reduce(intersect, .))
+comm_GF_corrected_GF_raw <- data.frame(outliers=get(paste0("list_candidates_",threshold))[c("GF_corrected","GF_raw")] %>% Reduce(intersect, .))
+
+
+outliers_set <- data.frame(rbind(comm_RDA_pRDA,comm_RDA_BAYPASS,comm_RDA_GF_raw,comm_RDA_LFMM,comm_pRDA_BAYPASS,comm_pRDA_GF_raw,comm_pRDA_LFMM,comm_BAYPASS_GF_raw,comm_BAYPASS_LFMM,comm_GF_raw_LFMM,comm_GF_corrected_LFMM,comm_BAYPASS_GF_corrected,comm_pRDA_GF_corrected,comm_RDA_GF_corrected,comm_GF_corrected_GF_raw)) %>% unique()
+
+assign(paste0("outliers_set_",threshold),outliers_set)
+
+#number of candidates identified by at least 2 methods
+print(nrow(get(paste0("outliers_set_",threshold))))
+
+}
+```
+
+## Linkage desequilibrium
+
+We can see that some of the outliers are located on the same contig. This can bias the signals by giving more weight to regions of the genome with a higher concentration of SNPs, which are in linkage disequilibrium (LD). This issue arises if we assume that the number of SNPs per contig is not size-dependent; thus, some contigs may be overrepresented due to stochastic events, potentially inflating their signals. To address this, we will remove SNPs that are in LD with other SNPs on the same contig. 
+
+ 
+ 
+
+Linkage desequilibrium calculation: 
+
+```{r LD}
+
+for(i in 1:length(list_threshold)){
+  
+  threshold <- list_threshold[i]
+
+#load genotypic data at the individual level
+load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/GEA/vcf_data_GEA.Rdata")
+genomic_matrix_LD <- vcf_data_GEA
+
+
+#subset the genomic matrix to only the outliers
+candidates_to_LD <- data.frame(genomic_matrix_LD[get(paste0("outliers_set_",threshold))$outliers])
+
+#put the data into the right format
+genotypic_data<- makeGenotypes(candidates_to_LD)
+
+#RUN the LD calculation
+LD_estimate <- LD(genotypic_data)
+
+#save the R² values
+matrix_LD <- LD_estimate$`R^2`
+matrix_LD_format<- matrix_LD[,-1] #remove the first row
+
+#filtered the LD to only take LD lower than -0.7 or above 0.7
+matrix_ld_filtered <- matrix_LD_format
+matrix_ld_filtered[abs(matrix_LD_format) < 0.7] <- 0
+
+# Plot the modified LD matrix using corrplot
+corrplot(matrix_ld_filtered, method = "number", addrect = 2, col = c("red","white", "red"), type = "upper", tl.col = "black", tl.cex = 0.6, number.cex = 0.5, cl.pos="n")
+
+
+# Save in a dataframe the SNP with LD above 0.7
+LD0.7<- which(matrix_LD_format > 0.7 & matrix_LD_format, arr.ind = TRUE)
+
+# Create a dataframe to retain snp in LD with others  
+LD_df <- data.frame(
+  snp_names_1 = rownames(matrix_LD_format)[LD0.7[, 1]],
+  snp_names_2 = colnames(matrix_LD_format)[LD0.7[, 2]],
+  LD = matrix_LD_format[LD0.7]
+)
+
+#create a new column contig and remove the rows where the SNPs in LD are in different contigs
+LD_df_contig_bis <- LD_df %>%
+  mutate(contig1 = sub("_[^_]*$", "", snp_names_1)) %>% 
+  mutate(contig2 = sub("_[^_]*$", "", snp_names_2))%>%
+  filter(contig1 == contig2)
+
+
+
+print(nrow(LD_df)-nrow(LD_df_contig_bis))
+
+assign(paste0("LD_df_contig_",threshold),LD_df_contig_bis)
+
+#save
+png(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/figure/LD_matrix_SNPs_",threshold,"_set.png"));corrplot(matrix_ld_filtered, method = "number", addrect = 2, col = c("red","white", "red"), type = "upper", tl.col = "black", tl.cex = 0.6, number.cex = 0.5, cl.pos="n");dev.off()
+
+}
+```
+
+For the LC set, 11 candidates were found to be in linkage disequilibrium (LD) with SNPs located on other contigs. We will retain these LD associations, as we are primarily interested in LD within a contig rather than between contigs. However, it is still possible that some of these 11 SNPs may be in LD with other SNPs within the same contig, so we may remove a few of them. For the MC set, there are no candidates in LD with SNPs on other contigs.
+
+```{r save LD corr, include=FALSE}
+#save
+png("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/figure/LD_matrix_SNPs_relax_set.png");corrplot(matrix_ld_filtered, method = "number", addrect = 2, col = c("red","white", "red"), type = "upper", tl.col = "black", tl.cex = 0.6, number.cex = 0.5, cl.pos="n");dev.off()
+```
+
+
+
+Now that we have a list of the LD associations between SNPs, we can proceed to remove the SNPs with weaker signals, specifically those with the highest p-values from the RDA analysis. 
+```{r pvalues}
+for(i in 1:length(list_threshold)){
+  
+  threshold <- list_threshold[i]
+  LD_df_contig <- get(paste0("LD_df_contig_",threshold))
+  
+#we need to output the names of the outliers in LD to see their pvalues and keep the lowest ones
+LD_snps <- data.frame(snp_names = c(LD_df_contig$snp_names_1,LD_df_contig$snp_names_2)) %>% unique() 
+
+#load pvalues RDA
+load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/GEA/pvalues_RDA_snp.Rdata")
+
+
+p_values_RDA_snp_1 <- merge(LD_snps, pvalues_RDA_snp,"snp_names"); colnames(p_values_RDA_snp_1)=c("snp_names_1","pvalues_1")
+p_values_RDA_snp_2 <- merge(LD_snps, pvalues_RDA_snp,"snp_names"); colnames(p_values_RDA_snp_2)=c("snp_names_2","pvalues_2")
+
+pval_final_1 <- merge(LD_df_contig,p_values_RDA_snp_1,"snp_names_1")
+pval_final_2 <- merge(LD_df_contig,p_values_RDA_snp_2,"snp_names_2")
+
+
+pval_merge <- cbind(pval_final_1,pval_final_2[,4])
+
+pval_merge_final <- pval_merge[,c(1,4,2,5)]; colnames(pval_merge_final) <- c("snp_names_1","pvalues_1","snp_names_2","pvalues_2")
+
+pval_merge_final$worst_snp <- ifelse(pval_merge_final$pvalues_1 > pval_merge_final$pvalues_2, pval_merge_final$snp_names_1, pval_merge_final$snp_names_2) #select the snp with the farest pvalues from 0 (the weakest signal)
+
+#snp to remove
+SNP_to_remove <- pval_merge_final$worst_snp %>% unique()
+
+nrow(data.frame(SNP_to_remove))
+
+  outliers_set <- get(paste0("outliers_set_",threshold))
+  
+#save
+outliers_set_final_overlapping_no_LD_new_var <- outliers_set[!(outliers_set$outliers %in% SNP_to_remove),]
+print(nrow(outliers_set_final_overlapping_no_LD_new_var%>% as.data.frame))
+
+assign(paste0("outliers_set_final_overlapping_no_LD_",threshold,"_new_var"),outliers_set_final_overlapping_no_LD_new_var)
+
+
+}
+```
+Based on an LD threshold of 0.7, we removed 36 SNPs from the LC set and 19 from the MC set.
+
+The final number of outliers retained for further analysis is 100 for the LC set and 39 for the MC set.
+
+```{r save the final outliers set, include=FALSE}
+
+for(i in 1:length(list_threshold)){
+  
+  threshold <- list_threshold[i]
+  
+#Rdata
+  save(list = paste0("outliers_set_final_overlapping_no_LD_",threshold,"_new_var"), file = paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/set/outliers_set_final_overlapping_no_LD_",threshold,"_new_var.Rdata"))
+
+
+#df
+outliers_set_final_overlapping_no_LD_new_var_df <- data.frame(get(paste0("outliers_set_final_overlapping_no_LD_",threshold,"_new_var")))
+
+assign(paste0("outliers_set_final_overlapping_no_LD_",threshold,"_new_var_df"),outliers_set_final_overlapping_no_LD_new_var_df)
+
+write_xlsx(get(paste0("outliers_set_final_overlapping_no_LD_",threshold,"_new_var_df")),path=paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/set/outliers_set_final_overlapping_no_LD_",threshold,"_new_var_df.xlsx"))
+
+}
+```
+
+# Random set of SNPs
+
+We can also extract a random set of SNPs to calculate genomic offset (GO) and compare them with the candidate markers. To create this random set, we need to randomly select the same number of SNPs as the candidates set (specifically, the less conservative one) from the full dataset of SNPs after removing all candidate SNPs identified by at least one GEA method.
+
+Additionally, we might want to ensure that the selected random SNPs maintain the same proportion of different allelic frequencies as the outliers. This can be important because the proportion of allelic frequencies may explain the observed patterns (similar to GWAS). For example, if we have 44 outliers with 10 SNPs in allelic frequencies between 0 and 0.1, 22 between 0.5 and 0.6, and 12 between 0.9 and 1, we should select random SNPs while preserving this ratio of allelic frequencies. 
+
+expliquer rapidement en disant que c'est pour LC
+
+## Random with same allelic frequencies
+
+New random selection including the same classes of allelic frequencies: 
+
+
+First, we need to calculate the mean allelic frequency across populations for each SNP: 
+```{r outliers_set_snps}
+load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/data_allelic_frequencies_29pop_adapcon_gentree_475_8616.Rdata")
+
+genomic_matrix <- data.frame(data_allelic_frequencies_29pop_adapcon_gentree_475_8616)
+
+#we need to keep only snps also present in the CG pop genomic data
+
+#load CG pop genomic data
+load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/allelic_frequencies_CG_pop.Rdata")
+common_snps <- intersect(colnames(data_allelic_frequencies_29pop_adapcon_gentree_475_8616), colnames(allelic_frequencies_CG_pop))
+
+#retained_snps 
+genomic_data_outliers_common_CG <- genomic_matrix[,common_snps]
+```
+
+We can calculate the allelic frequency of the outliers to assign them to classes of allelic frequency
+```{r allelic frequencies}
+#calculation of the mean allelic frequency across populations for the outliers
+genomic_data_outliers_mean <- genomic_matrix[,(colnames(genomic_matrix) %in% outliers_set_final_overlapping_no_LD_LC_new_var_df$get.paste0..outliers_set_final_overlapping_no_LD_...threshold..)] %>% colMeans() %>% as.data.frame() 
+genomic_data_outliers_mean$SNP_name <- row.names(genomic_data_outliers_mean)
+colnames(genomic_data_outliers_mean) <- c("mean_allelic_frequency","SNP_name")
+```
+
+
+Then, we need to identify classes of distribution of allelic frequency across populations for the outliers and select more or less the same distribution for the neutral ones. 
+
+```{r select neutral snp with similar distribution as the outliers}
+# Define bins and labels
+bins <- seq(0, 1, by = 0.1)
+bin_labels <- paste(head(bins, -1), tail(bins, -1), sep = "-")
+
+# Function to count frequencies within bins for a given row
+count_bins <- function(row, bins, bin_labels) {
+  bin_counts <- table(cut(row, breaks = bins, labels = bin_labels, include.lowest = TRUE))
+  # Ensure all bins are present
+  bin_counts <- as.data.frame(bin_counts)
+  bin_counts <- bin_counts %>% mutate(Var1 = as.character(Var1))
+  missing_bins <- setdiff(bin_labels, bin_counts$Var1)
+  if (length(missing_bins) > 0) {
+    missing_df <- data.frame(Var1 = missing_bins, Freq = 0)
+    bin_counts <- rbind(bin_counts, missing_df)
+  }
+  # Order by bin labels
+  bin_counts <- bin_counts[order(match(bin_counts$Var1, bin_labels)), ]
+  return(bin_counts$Freq)
+}
+
+# Apply the function to each row (SNP)
+binned_counts <- apply(data.frame(genomic_data_outliers_mean[,1]), 1, function(row) count_bins(row, bins, bin_labels))
+
+# Convert the result to a DataFrame
+binned_counts_df <- as.data.frame(t(binned_counts))
+colnames(binned_counts_df) <- bin_labels
+
+
+#now we can calculate the proportion of outliers for each class of allelic frequencies
+proportion_outliers <- binned_counts_df %>% colSums() %>% as.data.frame
+proportion_outliers$freq_class <- bin_labels
+colnames(proportion_outliers) <- c("num_outliers","freq_class")
+```
+
+Then, we need to remove all the snps identified as candidate by at least 1 GEA method to select random snp from this set:
+
+```{r removed outliers snps}
+#we also removed outliers snps 
+
+#remove all the snps identified by candidates by at least 1 GEA method
+all_candidates_set <- unique(list_all_candidates_snps_LC$list_all_candidates_snps_LC)
+outliers_set <- unique(outliers_set_final_overlapping_no_LD_LC_new_var_df)
+
+#df with all the candidates identified by at least 1 GEA method without the 100 outliers
+list_candidates_minus_outliers <- setdiff(all_candidates_set, outliers_set$outliers_set_final_overlapping_no_LD_LC_new_var)
+
+df_outliers <- data.frame(list_all_candidates_snps_LC)#####
+
+unique_outliers <-df_outliers$list_all_candidates_snps_LC
+
+genomic_data_wo_outliers <- genomic_data_outliers_common_CG[, !(colnames(genomic_data_outliers_common_CG) %in% unique_outliers)]
+```
+
+
+
+Finally, we can calculate the mean allelic frequency of each populations for the neutral set of snps and calculate their class and identify randomly snps matching the class of allelic frequencies of the outliers. 
+
+```{r identification of random snps, eval=F, echo=T}
+
+genomic_data_wo_outliers_mean <- genomic_data_wo_outliers %>% colMeans() %>% as.data.frame() 
+genomic_data_wo_outliers_mean$name_snps <- rownames(genomic_data_wo_outliers_mean)
+
+colnames(genomic_data_wo_outliers_mean) <- c("mean_allelic_frequency","name_snps")
+
+# Bin the neutral SNPs into frequency classes
+neutral_snps <- genomic_data_wo_outliers_mean %>%
+  mutate(freq_class = cut(mean_allelic_frequency, breaks = bins, labels = bin_labels, include.lowest = TRUE))
+
+# Randomly select the same number of neutral SNPs for each class
+#set.seed(71) the one used
+set.seed(73) # for reproducibility
+selected_neutral_snps <- neutral_snps %>%
+  group_by(freq_class) %>%
+  group_map(~ slice_sample(.x, n = proportion_outliers$num_outliers[proportion_outliers$freq_class == unique(.x$freq_class)], replace = FALSE), .keep = TRUE) %>%
+  bind_rows()
+
+# Print the selected neutral SNPs
+print(selected_neutral_snps)
+
+random_set_taxus_LC <- selected_neutral_snps
+```
+
+
+
+```{r save random SNPs set, eval=F, echo=T}
+random_set_taxus <- random_set_taxus_LC
+#save(random_set_taxus, file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/random_set_taxus.Rdata")
+
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/random_set_taxus.Rdata")
+
+df <- merge(random_set_taxus,random_set_taxus_LC,"name_snps")
+
+df_candidates <- data.frame("name_snps"=all_candidates_set)
+
+check_outliers<- merge(df_candidates,random_set_taxus,"name_snps")
+```
+
+### SNP from the ADAPCON-GENTREE only
+
+We also performed a new selection of random SNPs without restricting our selection to only those SNPs that are common between both sets of genomic data. 
+
+First, we need to calculate the mean allelic frequency across populations for each SNP: 
+```{r outliers_set_snps_ADAP_GENTR, eval=F, echo=T}
+load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/data_allelic_frequencies_29pop_adapcon_gentree_475_8616.Rdata")
+
+genomic_matrix <- data.frame(data_allelic_frequencies_29pop_adapcon_gentree_475_8616)
+```
+
+We can calculate the allelic frequency of the outliers to assign them to classes of allelic frequency
+```{r allelic frequencies ADAP_GENTR, eval=F, echo=T}
+#calculation of the mean allelic frequency across populations for the outliers
+genomic_data_outliers_mean <- genomic_matrix[,(colnames(genomic_matrix) %in% outliers_set_final_overlapping_no_LD_LC_new_var_df$get.paste0..outliers_set_final_overlapping_no_LD_...threshold..)] %>% colMeans() %>% as.data.frame() 
+genomic_data_outliers_mean$SNP_name <- row.names(genomic_data_outliers_mean)
+colnames(genomic_data_outliers_mean) <- c("mean_allelic_frequency","SNP_name")
+```
+
+
+Then, we need to identify classes of distribution of allelic frequency across populations for the outliers and select more or less the same distribution for the neutral ones. 
+```{r select neutral snp with similar distribution as the outliers ADAP_GENTR, eval=F, echo=T}
+# Define bins and labels
+bins <- seq(0, 1, by = 0.1)
+bin_labels <- paste(head(bins, -1), tail(bins, -1), sep = "-")
+
+# Function to count frequencies within bins for a given row
+count_bins <- function(row, bins, bin_labels) {
+  bin_counts <- table(cut(row, breaks = bins, labels = bin_labels, include.lowest = TRUE))
+  # Ensure all bins are present
+  bin_counts <- as.data.frame(bin_counts)
+  bin_counts <- bin_counts %>% mutate(Var1 = as.character(Var1))
+  missing_bins <- setdiff(bin_labels, bin_counts$Var1)
+  if (length(missing_bins) > 0) {
+    missing_df <- data.frame(Var1 = missing_bins, Freq = 0)
+    bin_counts <- rbind(bin_counts, missing_df)
+  }
+  # Order by bin labels
+  bin_counts <- bin_counts[order(match(bin_counts$Var1, bin_labels)), ]
+  return(bin_counts$Freq)
+}
+
+# Apply the function to each row (SNP)
+binned_counts <- apply(data.frame(genomic_data_outliers_mean[,1]), 1, function(row) count_bins(row, bins, bin_labels))
+
+# Convert the result to a DataFrame
+binned_counts_df <- as.data.frame(t(binned_counts))
+colnames(binned_counts_df) <- bin_labels
+
+
+#now we can calculate the proportion of outliers for each class of allelic frequencies
+proportion_outliers <- binned_counts_df %>% colSums() %>% as.data.frame
+proportion_outliers$freq_class <- bin_labels
+colnames(proportion_outliers) <- c("num_outliers","freq_class")
+```
+
+Then, we need to remove all the snps identified as candidate by at least 1 GEA method to select random snp from this set:
+
+```{r removed outliers snps ADAP_GENTR, eval=F, echo=T}
+#we also removed outliers snps 
+
+#remove all the snps identified by candidates by at least 1 GEA method
+all_candidates_set <- unique(list_all_candidates_snps_LC$list_all_candidates_snps_LC)
+outliers_set <- unique(outliers_set_final_overlapping_no_LD_LC_new_var_df)
+
+list_candidates_minus_outliers <- setdiff(all_candidates_set, outliers_set$outliers_set_final_overlapping_no_LD_LC_new_var)
+
+df_outliers <- data.frame(list_all_candidates_snps_LC)
+
+unique_outliers <-df_outliers$list_all_candidates_snps_LC
+
+genomic_data_wo_outliers <- genomic_matrix[, !(colnames(genomic_matrix) %in% unique_outliers)]
+```
+
+
+
+Finally, we can calculate the mean allelic frequency of each populations for the neutral set of snps and calculate their class and identify randomly snps matching the classes of allelic frequencies of the outliers. 
+
+```{r identification of random snps ADAP_GENTR, eval=F, echo=T}
+
+genomic_data_wo_outliers_mean <- genomic_data_wo_outliers %>% colMeans() %>% as.data.frame() 
+genomic_data_wo_outliers_mean$name_snps <- rownames(genomic_data_wo_outliers_mean)
+
+colnames(genomic_data_wo_outliers_mean) <- c("mean_allelic_frequency","name_snps")
+
+# Bin the neutral SNPs into frequency classes
+neutral_snps <- genomic_data_wo_outliers_mean %>%
+  mutate(freq_class = cut(mean_allelic_frequency, breaks = bins, labels = bin_labels, include.lowest = TRUE))
+
+# Randomly select the same number of neutral SNPs for each class
+#set.seed(71) the one used
+set.seed(73) # for reproducibility
+selected_neutral_snps <- neutral_snps %>%
+  group_by(freq_class) %>%
+  group_map(~ slice_sample(.x, n = proportion_outliers$num_outliers[proportion_outliers$freq_class == unique(.x$freq_class)], replace = FALSE), .keep = TRUE) %>%
+  bind_rows()
+
+# Print the selected neutral SNPs
+print(selected_neutral_snps)
+
+random_set_taxus_not_overlap_both_dataset <- selected_neutral_snps
+```
+
+
+
+```{r save random SNPs set ADAP_GENTR, eval=F, echo=T}
+
+#random_set_taxus_not_overlap_both_dataset <- random_set_taxus_not_overlap_both_dataset
+
+#save(random_set_taxus_not_overlap_both_dataset, file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/random_set_taxus_not_overlap_both_dataset.Rdata")
+
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/random_set_taxus_not_overlap_both_dataset.Rdata")
+
+df <- merge(random_set_taxus,random_set_taxus_LC,"name_snps")
+
+df_candidates <- data.frame("name_snps"=all_candidates_set)
+
+check_outliers<- merge(df_candidates,random_set_taxus_not_overlap_both_dataset,"name_snps")
+
+```
+
+## Random SNPs without taking the same allelic frequencies
+
+SNP from the overlapping set ADAPCON-GENTREE and READAPT genomic markers
+
+We can also create a set of random SNPs without considering the effect of allelic frequency. 
+
+```{r neutral set of SNPs, eval=F, echo=T}
+#We can use the dataset of snps overlapping between both dataset and without the outliers:
+genomic_data_wo_outliers
+```
+
+Now that we have the neutral set, we can randomly select the same number of SNPs as the candidate set used in the genomic offset (GO) calculation.
+
+```{r set of random SNPs, eval=F, echo=T}
+#set.seed(4)
+#nb_candidates <- 100
+#random_neutral_set_SNPs_T_adapcon_gentree <- sample(genomic_data_wo_outliers,nb_candidates,replace = F)
+
+#save(random_neutral_set_SNPs_T_adapcon_gentree, file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/random_neutral_set_SNPs_T_adapcon_gentree.Rdata")
+set.seed(190)
+nb_candidates <- 100
+random_neutral_set_SNPs_T_adapcon_gentree_bis <- sample(genomic_data_wo_outliers,nb_candidates,replace = F)
+
+#save(random_neutral_set_SNPs_T_adapcon_gentree_bis, file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/random_neutral_set_SNPs_T_adapcon_gentree_bis.Rdata")
+
+
+
+df_selected <- data.frame(name_snps=colnames(random_neutral_set_SNPs_T_adapcon_gentree))
+
+df_CG_pop <- data.frame("name_snps"=colnames(allelic_frequencies_CG_pop))
+
+df_outliers <- data.frame(name_snps= df_outliers$list_all_candidates_snps)
+
+df <- merge(df_selected,df_CG_pop,"name_snps")
+
+df <- merge(df_selected,df_outliers,"name_snps")
+```
+
+At the end, all the neutral selected SNPs are included in the common garden set of outliers and are not part of the candidates identified by at least one GEA method.
+
+
+What is below is a draft explaining the GEA methods: 
+```{r}
+#- RDA: Redundancy analysis. It's a linear multivariate methods (multivariate for response and explanatory variables) that do not account for population structure. It performs the analysis at the population level with allelic frequency data. 
+#- pRDA: Partial Redundancy analysis. It's an extension of the RDA accounting for population structure. As proxy of population structure, we used the PCs axis of a genetic PCA. It performs the analysis at the population level with allelic frequency data.
+#- BAYPASS: It's also a linear models accounting for population structure, univariate because it does consider explanatory variables one by one. The proxy of population structure is an omega matrix of genetic variation between populations using the core model of BAYPASS. It performs the analysis at the population level with data of the allele count at the population level.
+#- LFMM: latent factor mixte model: it's a linear multivariate model: all explanatory variables are studying together. It does correct for population structure by using latent factor (it's very similar to what we found with genetic PCs). It perform the analysis at the individual level with allele count data.
+#- GF: it's a non linear model based on machine learning. It does not correct for population structure and it's a multivariate analysis. snp per snp but all climatic variables together. Nevertheless, we can try to correct by population structure but it did not work well. It performs the analysis at the population level with allelic frequency data (the corrected version used the indiv level because it used the corrected genomic matrix from LFMM)
+```
+

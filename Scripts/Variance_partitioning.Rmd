@@ -1,0 +1,200 @@
+---
+title: "Variance_partitioning"
+author: "Thomas Francisco"
+date: "2024-04-30"
+output:
+  html_document:
+    number_sections: true #titles
+    toc: true #table of content
+    toc_float: true # enable the toc to be on the side of the text, always visible
+    collapsed: True #control if the toc label will only display top level titles
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+#rm(list = ls())
+knitr::opts_chunk$set(cache = FALSE)
+
+library(vegan)
+library(dplyr)
+```
+
+
+# Introduction 
+
+The goal of this script is to perform variance partitioning to disentangle the variables that explain genetic variation. The second goal is to determine whether climatic variables account for some of the genomic variation, suggesting the presence of candidate loci for local adaptation to climatic variables across populations. Indeed, one of the assumptions of GEA models is that environmental variables explain part of the genetic variation, and we aim to test this.  
+Additionally, variance partitioning helps visualize the extent of covariation between population structure, IBD (Isolation by Distance), and the environment. Since there is no single best proxy for ancestry or IBD, we employed several proxies for population structure and geographic distance.  
+To carry out this variance partitioning, we used RDA and pRDA analyses, which are explained in the scripts RDA_candidate_detection and pRDA_candidate_detection.  
+
+# Data
+First, we load the datasets. Since the goal is to disentangle the effects of ancestry, climate, and IBD (Isolation by Distance) on genetic variation, we used proxies for both ancestry and IBD. These proxies allow us to account for population structure and geographic factors when analyzing the genetic data.
+
+```{r intial data}
+#climatic data
+##0.6 corr
+Past_climatic_new_var <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_data/new_selection/Past_new_6_Climatic_data_scale_df.csv",sep=";",dec=",") 
+
+#Ancestry proxies
+##PCs axis
+structure_PCs <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/GEA/Structure_proxy/PCa_score_T_adapcon_gentree_scale.csv",sep=";",dec=",")
+
+##STRUCTURE Groups
+load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/GEA/Structure_proxy/Cluster_score_STRUCTURE_T_Adapcon_gentree.Rdata")
+Structure_cluster <- Cluster_score_STRUCTURE_T_Adapcon_gentree
+
+#IBD proxy
+#dbMEMs
+IBD_dbMEMs <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/GEA/dbMEMs/meta_data_dbmem_29pop_adapcon_gentree_scale.csv",sep=";",dec=",")
+#genomic data
+load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/data_allelic_frequencies_29pop_adapcon_gentree_475_8616.Rdata")
+genomic_matrix <- data_allelic_frequencies_29pop_adapcon_gentree_475_8616
+```
+
+
+```{r merge all informations into 1 table}
+#new_var
+Data_RDA <- merge(Past_climatic_new_var,structure_PCs[,c(1:3)],"Population") %>% merge(Structure_cluster,"Population") %>% merge(IBD_dbMEMs[,c(2,4,5,7:10)],"Population") 
+
+#scale coord
+scale_coord <- Data_RDA[,c(14,15)] %>%
+  apply(2,as.numeric) %>% scale()
+
+Climatic_data_RDA_pRDA <- data.frame(Data_RDA[,-c(14,15)],scale_coord)
+
+#Save for RDA, pRDA
+save(Climatic_data_RDA_pRDA,file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/GEA_new_var/variance_partitioning/Climatic_data_RDA_pRDA.Rdata")
+```
+
+
+# Models
+
+We performed several models with different proxies for the population structure and the geography
+
+
+## Model: coords as IBD proxy and PCs as ancestry proxy
+
+```{r variance partitionning with coord as IBD proxy and PCs as ancestry proxy}
+#total model
+M_tot_coord <- rda(formula=genomic_matrix~Annual_Tc+Diurnal_range_Tc+Tc_Seasonality+Tc_driest_quarter+Annual_P+P_Seasonality+PC1+PC2+Longitude+Latitude,data = Climatic_data_RDA_pRDA,scale=T)
+#RsquareAdj(M_tot_coord)
+#anova.cca(M_tot_coord)
+
+##partial_ancestry_model
+M_ancestry_coord <- rda(formula = genomic_matrix ~ PC1+PC2 +Condition(Annual_Tc+Diurnal_range_Tc+Tc_Seasonality+Tc_driest_quarter+Annual_P+P_Seasonality +Longitude+Latitude), data = Climatic_data_RDA_pRDA,scale=T)
+#RsquareAdj(M_ancestry_coord)
+#anova.cca(M_ancestry_coord)
+
+#partial_geo_model
+M_geo_coord <- rda(formula = genomic_matrix ~ Longitude+Latitude+ Condition(Annual_Tc+Diurnal_range_Tc+Tc_Seasonality+Tc_driest_quarter+Annual_P+P_Seasonality+PC1+PC2), data = Climatic_data_RDA_pRDA,scale=T)
+#RsquareAdj(M_geo_coord)
+#anova.cca(M_geo_coord)
+
+#partial_env_RDA
+M_IBE_coord <- rda(formula = genomic_matrix ~  Annual_Tc+Diurnal_range_Tc+Tc_Seasonality+Tc_driest_quarter+Annual_P+P_Seasonality +Condition(PC1+PC2+Longitude+Latitude) , data = Climatic_data_RDA_pRDA,scale=T)
+RsquareAdj(M_IBE_coord)
+##summary(M_IBE_coord)
+#anova.cca(M_IBE_coord)
+```
+Interpretation:   
+R^2 tot     : 0.52                     Adj R^2 tot     : 0.25    
+R^2 ancestry: 0.13                     Adj R^2 ancestry: 0.10  
+R^2 IBD     : 0.06                     Adj R^2 IDB     : 0.01  
+R^2 climate : 0.18                     Adj R^2 climate : 0.02  
+
+## Model: dbMEMs as IBD proxy and Structure groups as ancestry proxy
+
+```{r variance partitionning with mscore_structure as Structure proxy and dbMEMs as IBD proxy}
+#total model
+M_tot_db <- rda(formula=genomic_matrix~Annual_Tc+Diurnal_range_Tc+Tc_Seasonality+Tc_driest_quarter+Annual_P+P_Seasonality+Group1+Group2+Group3+MEM1+MEM2+MEM3+MEM4,data = Climatic_data_RDA_pRDA,scale=T)
+#RsquareAdj(M_tot_db)
+#anova.cca(M_tot_db)
+
+##partial_ancestry_model
+M_ancestry_db <- rda(formula = genomic_matrix ~ Group1+Group2+Group3 +Condition(Annual_Tc+Diurnal_range_Tc+Tc_Seasonality+Tc_driest_quarter+Annual_P+P_Seasonality +MEM1+MEM2+MEM3+MEM4), data = Climatic_data_RDA_pRDA,scale=T)
+#RsquareAdj(M_ancestry_db)
+#anova.cca(M_ancestry_db)
+
+#partial_geo_model
+M_geo_db <- rda(formula = genomic_matrix ~ MEM1+MEM2+MEM3+MEM4+ Condition(Annual_Tc+Diurnal_range_Tc+Tc_Seasonality+Tc_driest_quarter+Annual_P+P_Seasonality+Group1+Group2+Group3), data = Climatic_data_RDA_pRDA,scale=T)
+#RsquareAdj(M_geo_db)
+#anova.cca(M_geo_db)
+
+#partial_env_RDA
+M_IBE_db <- rda(formula = genomic_matrix ~  Annual_Tc+Diurnal_range_Tc+Tc_Seasonality+Tc_driest_quarter+Annual_P+P_Seasonality +Condition(Group1+Group2+Group3+ MEM1+MEM2+MEM3+MEM4) , data = Climatic_data_RDA_pRDA,scale=T)
+#RsquareAdj(M_IBE_db)
+#summary(M_IBE_db)
+#anova.cca(M_IBE_db)
+```
+
+Interpretation:   
+R^2 tot     : 0.60                     Adj R^2 tot     : 0.26    
+R^2 ancestry: 0.12                     Adj R^2 ancestry: 0.07  
+R^2 IBD     : 0.13                     Adj R^2 IDB     : 0.04  
+R^2 climate : 0.19                     Adj R^2 climate : 0.04  
+
+## Model: coords as IBD proxy and Structure groups as ancestry proxy
+
+```{r variance partitionning with coord as IBD proxy and Structure as ancestry proxy}
+#total model
+M_tot_coord <- rda(formula=genomic_matrix~Annual_Tc+Diurnal_range_Tc+Tc_Seasonality+Tc_driest_quarter+Annual_P+P_Seasonality+Group1+Group2+Group3+Longitude+Latitude,data = Climatic_data_RDA_pRDA,scale=T)
+#RsquareAdj(M_tot_coord)
+#anova.cca(M_tot_coord)
+
+##partial_ancestry_model
+M_ancestry_coord <- rda(formula = genomic_matrix ~ Group1+Group2+Group3 +Condition(Annual_Tc+Diurnal_range_Tc+Tc_Seasonality+Tc_driest_quarter+Annual_P+P_Seasonality +Longitude+Latitude), data = Climatic_data_RDA_pRDA,scale=T)
+#RsquareAdj(M_ancestry_coord)
+#anova.cca(M_ancestry_coord)
+
+#partial_geo_model
+M_geo_coord <- rda(formula = genomic_matrix ~ Longitude+Latitude+ Condition(Annual_Tc+Diurnal_range_Tc+Tc_Seasonality+Tc_driest_quarter+Annual_P+P_Seasonality+Group1+Group2+Group3), data = Climatic_data_RDA_pRDA,scale=T)
+#RsquareAdj(M_geo_coord)
+#anova.cca(M_geo_coord)
+
+#partial_env_RDA
+M_IBE_coord <- rda(formula = genomic_matrix ~  Annual_Tc+Diurnal_range_Tc+Tc_Seasonality+Tc_driest_quarter+Annual_P+P_Seasonality +Condition(Group1+Group2+Group3+Longitude+Latitude) , data = Climatic_data_RDA_pRDA,scale=T)
+#RsquareAdj(M_IBE_coord)
+#summary(M_IBE_coord)
+#anova.cca(M_IBE_coord)
+```
+Interpretation:   
+R^2 tot     : 0.54                     Adj R^2 tot     : 0.24    
+R^2 ancestry: 0.15                     Adj R^2 ancestry: 0.09  
+R^2 IBD     : 0.06                     Adj R^2 IDB     : 0.01  
+R^2 climate : 0.18                     Adj R^2 climate : 0.03  
+
+
+## Model: dbMEMs as IBD proxy and PCs as ancestry proxy
+    
+```{r variance partitionning with dbMEMs as IBD proxy and PCs as ancestry proxy}
+#total model
+M_tot_db <- rda(formula=genomic_matrix~Annual_Tc+Diurnal_range_Tc+Tc_Seasonality+Tc_driest_quarter+Annual_P+P_Seasonality+PC1+PC2+MEM1+MEM2+MEM3+MEM4,data = Climatic_data_RDA_pRDA,scale=T)
+#RsquareAdj(M_tot_db)
+#anova.cca(M_tot_db)
+
+##partial_ancestry_model
+M_ancestry_db <- rda(formula = genomic_matrix ~ PC1+PC2 +Condition(Annual_Tc+Diurnal_range_Tc+Tc_Seasonality+Tc_driest_quarter+Annual_P+P_Seasonality +MEM1+MEM2+MEM3+MEM4), data = Climatic_data_RDA_pRDA,scale=T)
+#RsquareAdj(M_ancestry_db)
+#anova.cca(M_ancestry_db)
+
+#partial_geo_model
+M_geo_db <- rda(formula = genomic_matrix ~ MEM1+MEM2+MEM3+MEM4+ Condition(Annual_Tc+Diurnal_range_Tc+Tc_Seasonality+Tc_driest_quarter+Annual_P+P_Seasonality+PC1+PC2), data = Climatic_data_RDA_pRDA,scale=T)
+#RsquareAdj(M_geo_db)
+#anova.cca(M_geo_db)
+
+#partial_env_RDA
+M_IBE_db <- rda(formula = genomic_matrix ~  Annual_Tc+Diurnal_range_Tc+Tc_Seasonality+Tc_driest_quarter+Annual_P+P_Seasonality +Condition(PC1+PC2+ MEM1+MEM2+MEM3+MEM4) , data = Climatic_data_RDA_pRDA,scale=T)
+#RsquareAdj(M_IBE_db)
+#summary(M_IBE_db)
+#anova.cca(M_IBE_db)
+```
+
+Interpretation:   
+R^2 tot     : 0.59                     Adj R^2 tot     : 0.28    
+R^2 ancestry: 0.11                     Adj R^2 ancestry: 0.08  
+R^2 IBD     : 0.13                     Adj R^2 IDB     : 0.04  
+R^2 climate : 0.18                     Adj R^2 climate : 0.03  
+
+
+**Conclusion: We retained the model using dbMEMs as the proxy for IBD and PCs as the proxy for ancestry. This model explains the most genetic variation while maintaining a low number of variables, making it the most efficient and informative choice for our analysis.** 
+
+

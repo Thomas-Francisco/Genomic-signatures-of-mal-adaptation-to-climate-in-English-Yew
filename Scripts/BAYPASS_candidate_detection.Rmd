@@ -1,0 +1,727 @@
+---
+title: "BAYPASS_candidate_detection"
+author: "Thomas Francisco"
+date: "2024-04-30"
+output:
+  html_document:
+    number_sections: true #titles
+    toc: true #table of content
+    toc_float: true # enable the toc to be on the side of the text, always visible
+    collapsed: True #control if the toc label will only display top level titles
+    toc_depth: 3
+---
+ 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache = FALSE)
+
+rm(list = ls())
+library(here)
+library(dplyr)
+library(tidyr)
+library(radiant.data)
+library(stringr)
+library(corrplot)
+library(writexl)
+#for function from BAYPASS, we need the packages: 
+library(mvtnorm)
+library(geigen)
+library(data.table)
+
+#run the script baypass_R_functions
+```
+
+
+# Introduction 
+
+BAYPASS is GEA method developed by Gautier in 2015. The underlying models explicitly account for (and may estimate) the covariance structure among the population allele frequencies that originates from the shared history of the populations. There are 3 models that function differently:  
+    - the core model: An FST-scan method that does not take into account climatic or environmental variables.  
+    - the auxiliary covariate model: A GEA method that does not account for population structure.  
+    - the standard covariate model: A GEA method that accounts for population structure. 
+    
+We will use the **Standard Covariate Model** to perform outlier detection. More precisely, this model calculates a (scaled) covariance matrix between populations (which will be used as a covariate in the model to account for population structure). This model evaluates the extent to which each marker is linearly associated with the covariates (the covariance matrix and the climatic/environmental variables).
+The estimation of the regression coefficient for each SNP with the covariates is estimated using either MCMC (not explain here) or IS (importance sampling) approximation. The IS model also allows for the estimation of the Bayes factor to evaluate the support in favor of association of each SNP i with a covariable k, i.e., to compare the model with association (βik ̸= 0) against the null model (βik = 0) (BAYPASS manual).
+
+There is few steps to perform the outlier detection using BAYPASS:  
+- format of the genomic data (with and without MAF)  
+- format of the climatic data  
+- run the standard covariate model with IS in ubuntu  
+- analyse the results (following the BAYPASS manual)  
+
+```{r metadata}
+#meta data pop
+meta_data_pop <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Populations/taxus_sample_29pop.csv",h=T,sep=";",dec=",")
+#meta data indiv
+meta_data_vcf=read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Samples/samples_taxus_baccata_adapcon_gentree.csv",h=T,sep=";",dec=",")
+```
+ 
+# Data
+
+The genomic data needs to be formatted with SNPs in rows, with one row per SNP, and populations in columns (the number of columns should be twice the number of populations), with two columns per population (one for each allele of a SNP). The genomic information is coded in allele counts at the population level, as shown below:  
+        POP1  POP2  POP3  POP4  POP5  POP6  
+ SNP 1: 71 8 115 0 61 36 51 39 10 91 69 58  
+ SNP 2: 82 0 91 0 84 14 24 57 28 80 18 80  
+ 
+We will need to create two genomic files in this format: one file for GEA and another for calculating the covariance matrix to account for population structure. The covariance matrix file will not be filtered by Minor Allele count (MAC) because MAC is important for assessing population structure.
+
+## Format of the genomic data for the GEA analysis (corrected for MAC)
+
+The genomic matrix consists of the imputed and MAC-corrected dataset (for GEA) or the dataset without MAC correction (for the omega matrix), comprising 475 individuals and 8,616 SNPs.
+```{r Load genomic data}
+#genomic data for outlier detection
+load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/Gen_matrix_imp_T_Adapcon_Gentree_475_8616.Rdata")
+genomic_data_maf_c <-Gen_matrix_imp_T_Adapcon_Gentree_475_8616
+
+#genomic data with MAF (non corrected) for covariance matrix
+load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/GEA/Data_geno_no_maf_c_8252SNP_452IND.Rdata")
+
+genomic_data_no_maf_c <- Data_geno_no_maf_c_8252SNP_452IND
+```
+
+```{r add population info }
+
+genomic_data_maf_c_ID <- rownames_to_column(genomic_data_maf_c)
+#name of VCF_ID to merge 
+names(genomic_data_maf_c_ID)[names(genomic_data_maf_c_ID) == 'rowname'] <- 'VCF_ID'
+
+#add the population information
+genomic_data_MAF_pop <- data.frame(merge(meta_data_vcf[,c(1,3)],genomic_data_maf_c_ID, "VCF_ID"))
+```
+
+```{r calculate the allele count at the population level}
+
+#this function enables to calculate the allelic count of the 1st allele of SNP from the genotypic data in format: 0, 1, 2. 
+reformat_genotype <- function(allele) {
+  allele1 <- case_when(
+    allele == " 0" ~ 2,
+    allele == " 1" ~ 1,
+    allele == " 2" ~ 0,
+    allele == "0" ~ 2,
+    allele == "1" ~ 1,
+    allele == "2" ~ 0,
+    TRUE ~ NA_real_
+  )
+  return(allele1)
+}
+
+# Apply the reformat_genotype function to SNP columns and calculate Allele2. Allele1 and 2 in two different dataframe to merge them more easily after. 
+
+#allele1 
+df_allele1 <- genomic_data_MAF_pop %>%
+  mutate(across(starts_with("Tbac"), ~ reformat_genotype(.))) 
+
+  
+#allele 2
+df_allele2 <- df_allele1 %>%
+  mutate_at(vars(starts_with("Tbac")), ~ 2 - .)#to calculate the allele2, we just did 2- the count of allele1 for each individual for each snp. 
+
+
+# Group by Population and summarize allele counts
+
+#allele1
+allele_counts_allele1 <- df_allele1 %>%
+  group_by(Population) %>%
+  summarize(
+    across(starts_with("Tbac"), ~ sum(.)),
+  )
+
+#allele2
+allele_counts_allele2 <- df_allele2 %>%
+  group_by(Population) %>%
+  summarize(
+    across(starts_with("Tbac"), ~ sum(.)),
+  )
+```
+
+
+```{r righ format for BAYPASS, message=FALSE, warning=FALSE}
+#rename allele_counts_2 to merge them with allele1
+allele_counts_allele2$Population <- paste0(allele_counts_allele2$Population,"_Allele_2")
+
+#final dataset with both allele 1 and 2 
+
+final_dtf <- rbind(allele_counts_allele1,allele_counts_allele2);row.names(final_dtf) <- final_dtf$Population
+
+#order the population to have the format where allele1 and allele 2 for each pop are beside
+final_r_order <- final_dtf[order(row.names(final_dtf)), ]
+
+#allele in row and population*2 in columns side by side
+data_allele_count_BAYPASS_MAF_c <- data.frame(t(final_r_order))
+
+#export the data in txt
+write.table(x=data_allele_count_BAYPASS_MAF_c,
+  file = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/GEA/BAYPASS/data_allele_count_BAYPASS_MAF_c.txt", 
+            sep = " ",
+            row.names = F, 
+            col.names = F) 
+```
+The file data_allele_count_BAYPASS_MAF_c contains the genotypic data to run the BAYPASS standard covariate model with importance sampling (IS).
+
+## Format of the genomic data for the covariance matrix (non corrected for MAC)
+
+```{r add population info covar}
+
+genomic_data_maf_no_c_ID <- rownames_to_column(genomic_data_no_maf_c)
+#name of VCF_ID to merge 
+names(genomic_data_maf_no_c_ID)[names(genomic_data_maf_no_c_ID) == 'rowname'] <- 'VCF_ID'
+
+#add the population information
+genomic_data_no_MAF_pop <- data.frame(merge(meta_data_vcf[,c(1,3)],genomic_data_maf_no_c_ID, "VCF_ID"))
+```
+
+```{r calculate the allele count at the population level covar}
+# Apply the reformat_genotype function to SNP columns and calculate Allele2. Allele1 and 2 in two different dataframe to merge them more easily after. 
+
+#allele1 
+df_allele1_no_mac <- genomic_data_no_MAF_pop %>%
+  mutate(across(starts_with("Tbac"), ~ reformat_genotype(.))) 
+
+  
+#allele 2
+df_allele2_no_mac <- df_allele1_no_mac %>%
+  mutate_at(vars(starts_with("Tbac")), ~ 2 - .)#to calculate the allele2, we just did 2- the count of allele1 for each individual for each snp. 
+
+# Group by Population and summarize allele counts
+
+#allele1
+allele_counts_allele1_no_mac <- df_allele1_no_mac %>%
+  group_by(Population) %>%
+  summarize(
+    across(starts_with("Tbac"), ~ sum(.,na.rm = TRUE)),
+  )
+
+#allele2
+allele_counts_allele2_no_mac <- df_allele2_no_mac %>%
+  group_by(Population) %>%
+  summarize(
+    across(starts_with("Tbac"), ~ sum(.,na.rm = TRUE)),
+  )
+```
+
+
+```{r right format for BAYPASS covar, message=FALSE, warning=FALSE}
+#rename allele_counts_2 to merge them with allele1
+allele_counts_allele2_no_mac$Population <- paste0(allele_counts_allele2_no_mac$Population,"_Allele_2")
+
+#final dataset with both allele 1 and 2 
+
+final_dtf_no_mac <- rbind(allele_counts_allele1_no_mac,allele_counts_allele2_no_mac);row.names(final_dtf_no_mac) <- final_dtf_no_mac$Population
+
+#order the population to have the format where allele1 and allele 2 for each pop are beside
+final_r_order_no_mac <- final_dtf_no_mac[order(row.names(final_dtf_no_mac)), ]
+
+#allele in row and population*2 in columns side by side
+data_allele_count_BAYPASS_MAF_no_c <- data.frame(t(final_r_order_no_mac))
+
+#export the data in txt
+write.table(x=data_allele_count_BAYPASS_MAF_no_c,
+  file = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/GEA/BAYPASS/data_allele_count_BAYPASS_MAF_no_c.txt", 
+            sep = " ",
+            row.names = F, 
+            col.names = F) 
+```
+data_allele_count_BAYPASS_MAF_no_c contains the genomic data used to run the core model of BAYPASS to calculate the omega matrix.
+
+## Climatic data
+
+We load the non scale climatic data: 
+```{r Load climatic data}
+#climatic data 
+climatic_data <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_data/new_selection/Past_new_6_Climatic_data_scale_df.csv",sep=";",dec=",")
+
+climatic_data_BAYPASS <- data.frame(t(climatic_data))
+```
+
+The units are:  
+  - Bio1: mean annual temperature (°C)  
+  - Bio2: Mean diurnal range (mean of max temp - min temp)  
+  - Bio4: Temperature seasonality (standard deviation *100)  
+  - Bio9: Mean temperature of the Driest quarter (°C)  
+  - Bio12: Total (annual) precipitation (mm)  
+  - Bio15: Precipitation seasonality (coefficient of variation)  
+
+
+We need to format the data for BAYPASS, which can be done in two ways: either by creating one text file for each climatic variable with populations in columns or by creating a single text file with all the climatic variables in rows and populations in columns.
+```{r save climatic data BAYPASS format}
+write.table(x=climatic_data_BAYPASS[-c(1,2),],
+  file = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/GEA_new_var/BAYPASS/climatic_data_BAYPASS.txt", 
+            sep = " ",
+            row.names = F, 
+            col.names = F) 
+```
+climatic_data_BAYPASS contains the climatic data used to run the standard covariate model with IS in BAYPASS.
+
+
+# Covariate model
+    
+We ran the core model to estimate the covariance matrix used to correct for population structure.  
+We used the genomic data not corrected for MAC: 8252 SNPS, 29pop with allele count at the population level (data_allele_count_BAYPASS_MAF_no_c file)
+The core model was run with the following parameters:  
+    i) 20 pilot runs of 500 iterations (to adjust proposal distributions)    
+   ii) a burn-in period of 5000 iterations   
+  iii) final MCMC sampling of 1000 parameter values sampled every 20 iterations (i.e., a total of 20 000 iterations)    
+  
+The covariance matrix used to correct for population structure is scaled directly in the model, so no additional scaling is needed.
+  
+The output results are here: 
+```{r covariate matrix}
+omega <- as.matrix(read.table("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/GEA/BAYPASS/covari_matrix_core_model/out_mat_omega.out"))
+country_names <- climatic_data$Country
+dimnames(omega)=list(country_names,country_names)
+```
+Now, we can visualize the covariance matrix using plots, corrplot, and heatmaps, as proposed by Gautier (BAYPASS Manual) and following Archambeau et al. (2024).
+
+```{r plot corrplot}
+#Function from Gautier 2015)
+plot.omega <- function(omega,PC=c(1,2),pop.names=paste0("Pop",1:nrow(omega)),main=expression("SVD of "*Omega),col=rainbow(nrow(omega)),pch=16,pos=2){
+  om.svd=svd(omega)
+  eig=om.svd$d
+  pcent.var=100*eig/sum(eig)
+  plot(om.svd$u[,PC],main=main,pch=pch,col=col,
+       xlab=paste0("PC",PC[1]," (",round(pcent.var[PC[1]],2),"%)"),
+       ylab=paste0("PC",PC[2]," (",round(pcent.var[PC[2]],2),"%)")
+  )
+  text(om.svd$u[,PC[1]],om.svd$u[,PC[2]],pop.names,col=col,pos=pos)
+  list(PC=om.svd$u,eig=eig,pcent.var=pcent.var)
+}
+
+# Using SVD decomposition
+SVD_decomposition_omega_matrix <- plot.omega(omega=omega,pop.names=country_names)
+```
+
+```{r Save corrplot, include=FALSE}
+#save
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/BAYPASS/figures/SVD_decomposition_omega_matrix.pdf");SVD_decomposition_omega_matrix <- plot.omega(omega=omega,pop.names=country_names);dev.off()
+```
+
+```{r plot heatmap}
+# as a correlation plot
+cor_mat <- cov2cor(omega)
+corrplot::corrplot(cor_mat)
+# corrplot(cor_mat,method="color",mar=c(2,1,2,2)+0.1,
+# main=expression("Correlation map based on"~hat(Omega)))
+
+# as a heatmap and hierarchical clustering tree (using the average agglomeration method)
+##we use the population names
+pop_names <- climatic_data$Population
+dimnames(omega)=list(pop_names,pop_names)
+
+#cor matrix 
+cor_mat <- cov2cor(omega)
+
+hclust_ave <- function(x) hclust(x, method="average")
+Heatmap_omega_matrix<-heatmap(1-cor_mat,hclustfun = hclust_ave,
+main=expression("Heatmap of "~hat(Omega)~"("*d[ij]*"=1-"*rho[ij]*")"))
+```
+
+```{r Save heatmap, include=FALSE}
+#save
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/BAYPASS/figures/Heatmap_omega_matrix.pdf");Heatmap_omega_matrix<-heatmap(1-cor_mat,hclustfun = hclust_ave,
+main=expression("Heatmap of "~hat(Omega)~"("*d[ij]*"=1-"*rho[ij]*")"));dev.off()
+
+```
+  We can see that the plot of the omega matrix is very similar to what is found using a PCA with the first two axes. This indicates that the correction for population structure in BAYPASS is comparable to the corrections obtained through pRDA, LFMM, and GF
+  
+  
+# standard covariate model 
+
+## Run under Linux
+
+"We need to run the IS models multiple times to check if the outputs from the different runs are consistent. The models are executed using the IS model in the Linux command-line interface of BAYPASS. We will interpret the Bayes Factor (BF) and the empirical Bayesian p-values (eBPis).
+
+## Results
+
+First, we extracted the BF and eBPis from the BAYPASS output (out_BAYPASS_outliers_ide_{seed}_summary_betai_reg.out)
+
+```{r names of snp and climatic data}
+#names snp
+names_snps <- colnames(genomic_data_maf_c)
+
+#name climatic data
+  climatic_variables <- colnames(climatic_data)
+  COVARIABLE <- c(1,2,3,4,5,6) #to merge with output results of BAYPASS and have the name of the climatic variables
+climatic_variables_merge <- data.frame(climatic_variables[-c(1,2)], COVARIABLE)
+
+#only the name of the variables 
+names_climatic_variables <- climatic_variables[-c(1,2)]
+```
+
+
+```{r add the names of SNPs and climatic var}
+
+for(x in 1:5){
+  seed <- x+11#because the selected seeds of the runs are: 12 to 16
+  output_BAYPASS_run <- read.table(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/BAYPASS/runs/out_BAYPASS_outliers_ide_",seed,"_summary_betai_reg.out"),h=T)
+  
+  #add the name of the climatic variables
+  BAYPASS_clim <- merge(climatic_variables_merge,output_BAYPASS_run,"COVARIABLE")
+
+BAYPASS_clim$climatic_variables..c.1..2.. <- as.factor(BAYPASS_clim$climatic_variables..c.1..2..)
+
+#add names snps
+subset_name <- paste0("RUN_",x, "_BAYPASS_results") # Name the output dataframe of the loop
+
+  Data_results <- BAYPASS_clim %>% 
+    group_by(climatic_variables..c.1..2..) %>% 
+    mutate(names_snps = names_snps) %>%
+    ungroup()
+  
+  assign(subset_name, Data_results)
+}
+
+names_subset_data_frame <- c("RUN_1_BAYPASS_results","RUN_2_BAYPASS_results","RUN_3_BAYPASS_results","RUN_4_BAYPASS_results","RUN_5_BAYPASS_results")
+```
+
+We also added the run info for BF and for EBpis.
+
+```{r RUN info}
+## we also add the RUN info
+    for (x in 1:5) {
+      var <- paste0("RUN_",x,"_BAYPASS_results")
+    # Create the new dataframe name
+    names_final <- paste0(var, "_final")
+    
+    # Extract the dataframe using get
+    data <- get(var)
+    
+    name_BF.dB. <- paste0("BF_RUN",x)
+    nam_eBPis <- paste0("eBPis_RUN",x)
+  
+    # Mutate the data
+    names(data)[names(data)== "BF.dB."] <- name_BF.dB.
+    names(data)[names(data)== "eBPis"] <- nam_eBPis
+    
+    # Assign the mutated data to a new dataframe
+    assign(names_final, data)
+    }
+```
+
+Finally, we merged all the runs in on dataframe
+```{r merge runs}
+#merge all runs
+data_tot_results_allRUNs <- cbind(RUN_1_BAYPASS_results_final[,c(12,2,8,11)],RUN_2_BAYPASS_results_final[,c(8,11)],RUN_3_BAYPASS_results_final[,c(8,11)],RUN_4_BAYPASS_results_final[,c(8,11)],RUN_5_BAYPASS_results_final[,c(8,11)])
+```
+
+
+## Results across runs
+    
+Now, we wanted to see if the runs provided similar results. To do this, we calculated the correlation of the Bayes Factor (BF) and empirical Bayesian p-values (eBPis) for each run for each climatic variable.  
+First, we needed to subset the dataset of all runs based on climatic variables to create one dataset for each climatic variable.
+```{r}
+#subset the results at the climatic variable scale to compare values between runs
+for(var in names_climatic_variables){
+  subset_name <- paste0(var, "_BAYPASS_all_runs") #name the output dataframe of the loop
+  assign(subset_name, subset(data_tot_results_allRUNs, climatic_variables..c.1..2.. == var))#assign the name to the dataframe in a loop
+}
+```
+
+
+```{r list of subset}
+#list of dataset with data of all run for each climatic data
+final_names_dataframe <- c("Annual_Tc_BAYPASS_all_runs","Diurnal_range_Tc_BAYPASS_all_runs","Tc_Seasonality_BAYPASS_all_runs","Tc_driest_quarter_BAYPASS_all_runs","Annual_P_BAYPASS_all_runs","P_Seasonality_BAYPASS_all_runs")
+#name climatic data
+names_climatic_variables <- colnames(climatic_data[,-c(1,2)])
+```
+
+
+Then, we wanted to see if these values were consistent across runs by testing the correlation of the values across runs: 
+
+```{r correlation between runs for BF, message=FALSE, warning=FALSE}
+#correlation between runs for BF 
+for(x in 1:5){
+  var <- final_names_dataframe[x]
+  
+  #names of the corr matrix for each biovariable
+  names_corr <- paste0("correlation_",var,"_BF")
+  #title of corrplot
+  title <- (paste0(var,"_BF"))
+  
+  #group for each bio var with the values of Bayes factor only 
+corr_bio <- cor(get(var)[, grepl("BF", names(get(var)))]) 
+
+#name the corr_bio with names_corr
+assign(names_corr,corr_bio)
+
+#plot corrplot
+corr_plot <- corrplot(get(names_corr), method = "number", addrect = 2, col = c("red", "white", "red"), type = "lower", tl.col = "black", tl.cex = 0.6, number.cex = 0.6, title = title,mar=c(0,0,1,0) )
+
+#save
+pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/BAYPASS/figures/correlation_BF_values_across_runs_",names_climatic_variables[x],".pdf"));corrplot(get(names_corr), method = "number", addrect = 2, col = c("red", "white", "red"), type = "lower", tl.col = "black", tl.cex = 0.6, number.cex = 0.6, title = title,mar=c(0,0,1,0) );dev.off()
+}
+```
+
+
+Interpretation: The Bayes Factor (BF) values show high consistency across runs, with correlations for all climatic variables equal to or exceeding 0.84.
+Conclusion: We can identify candidates SNPs based on the mean BF across runs, indicating robust associations with the climatic variables.
+
+```{r correlation between runs for EBPis}
+for(var in final_names_dataframe){
+  #names of the corr matrix for each biovariable
+  names_corr <- paste0("correlation_",var,"_eBPis")
+  #title of corrplot
+  title <- (paste0(var,"_eBPis"))
+  
+#group for each bio var with the values of empirical bayesian pvalues only 
+corr_bio <- cor(get(var)[, grepl("eBPis", names(get(var)))]) 
+
+#name the corr_bio with names_corr
+assign(names_corr,corr_bio)
+
+#plot corrplot
+#corr_plot <- corrplot(get(names_corr), method = "number", addrect = 2, col = c("red", "white", "red"), type = "lower", tl.col = "black", tl.cex = 0.6, number.cex = 0.6, title = title,mar=c(0,0,1,0) )
+
+}
+```
+Interpretation: The empirical Bayesian p-values (eBPis) exhibit high consistency across runs, with correlations for all climatic variables exceeding 0.90.
+Conclusion: We can also identify candidate SNPs based on the mean eBPis values across runs.
+
+# Candidate detection
+    
+## Thresholds
+
+### Bayes factor values
+
+To choose candidate SNPs, we will establish a threshold based on Bayes Factor (BF) and empirical Bayesian p-values (eBPis). Following Gautier (2015), we will apply Jeffreys' rule (Jeffreys, 1961) to quantify the strength of evidence in favor of the association between the SNP and the covariable, utilizing the following dB unit scale:  
+- 10 < BF < 15 = strong evidence  
+- 15 < BF < 20 = very strong evidence  
+- BF > 20 = decisive evidence  
+    
+Additionally, we considered eBPis, with values greater than 3 indicating candidates, as suggested by Ruiz Daniels et al. (2019). We also investigated the top 1%, top 0.5%, or the top 100 SNPs with the highest correlation with the climatic variables.
+
+To begin this selection process, we will calculate the mean BF values across runs for each SNP.
+
+```{r mean of BF values}
+final_names_dataframe <- c("Annual_Tc_BAYPASS_all_runs","Diurnal_range_Tc_BAYPASS_all_runs","Tc_Seasonality_BAYPASS_all_runs","Tc_driest_quarter_BAYPASS_all_runs","Annual_P_BAYPASS_all_runs","P_Seasonality_BAYPASS_all_runs")
+
+#mean BF values 
+for(data in final_names_dataframe){
+  #names of the corr matrix for each biovariable
+  names_corr <- paste0("mean_",data,"_BF_values")
+  
+  #select only the BF values
+  dataset <- get(data)[, grepl("BF", names(get(data)))]
+  
+  #mean
+  mean_BF_values <- data.frame(names_snps,rowMeans(dataset)); colnames(mean_BF_values)=c("names_snps","BF_values")
+    
+  
+#name the corr_bio with names_corr
+assign(names_corr,mean_BF_values)
+  
+}
+
+list_mean_BF_clim <- c("mean_Annual_Tc_BAYPASS_all_runs_BF_values","mean_Diurnal_range_Tc_BAYPASS_all_runs_BF_values","mean_Tc_Seasonality_BAYPASS_all_runs_BF_values","mean_Tc_driest_quarter_BAYPASS_all_runs_BF_values","mean_Annual_P_BAYPASS_all_runs_BF_values","mean_P_Seasonality_BAYPASS_all_runs_BF_values")
+```
+
+
+Next, we will identify candidates by applying a Bayes Factor (BF) threshold of 10 for each climatic variable.
+```{r threshold BF 10}
+thres_BF <- 10 #threshold of BF
+
+for(x in 1:6){
+  #names of the corr matrix for each biovariable
+  names_climatic_var <- names_climatic_variables[x]
+  data <- get(list_mean_BF_clim[x])
+  
+ selection_outliers <- data.frame(Loci=data$names_snps[which(data$BF_values>thres_BF)],BF = data$BF_values[which(data$BF_values>thres_BF)], climatic_variables=names_climatic_var)
+ 
+ assign(paste0("names_outliers_",names_climatic_var),selection_outliers)
+ 
+ # Count the number of candidates for each climatic variable
+  count <- data.frame(Climatic_variable=names_climatic_var,Number_outliers=nrow(selection_outliers))
+  
+  #name the corr_bio with names_corr
+assign(paste0("outliers_",names_climatic_var),count)
+}
+  # Combine the results for each climatic variable to see the number of candidates
+  outliers_summary_BF10 <- rbind(outliers_Annual_Tc,outliers_Diurnal_range_Tc,outliers_Tc_Seasonality,outliers_Tc_driest_quarter,outliers_Annual_P,outliers_P_Seasonality)
+
+
+#name of the candidates
+  outliers_names_summary_BF_10 <- rbind(names_outliers_Annual_Tc,names_outliers_Diurnal_range_Tc,names_outliers_Tc_Seasonality,names_outliers_Tc_driest_quarter,names_outliers_Annual_P,names_outliers_P_Seasonality)
+  
+  
+  
+  #finally we can search for same candidates across climatic variables
+
+duplicated_loci_BF10 <- duplicated(outliers_names_summary_BF_10$Loci) | duplicated(outliers_names_summary_BF_10$Loci, fromLast = TRUE)
+
+# Subset the data frame to show only the duplicated loci
+duplicated_outliers_BF10 <- outliers_names_summary_BF_10[duplicated_loci_BF10, ]
+
+#Number of candidates: 
+nrow(outliers_names_summary_BF_10)
+
+#at the climatic var scale
+outliers_summary_BF10
+```
+
+We can see that 60 candidates are identified using BAYPASS:       
+- Bio 1:   9  
+- Bio 2:   7  
+- Bio 4:   23  
+- Bio 9:   8  
+- Bio 12:  3  
+- Bio 15:  17  
+  
+Moreover, 4 candidates are identified by 2 climatic variables. 
+
+Finally, we saved the set of candidates for downstream analysis 
+```{r save candidates set}
+
+outliers_T_adapcon_gentree_BAYPASS_BF_10 <- outliers_names_summary_BF_10[,-2]
+
+#write_xlsx(outliers_T_adapcon_gentree_BAYPASS_BF_10,"C:/Users/tfrancisco/Documents/Thèse/Results/species/taxus/GEA_new_var/outliers/outliers_T_adapcon_gentree_BAYPASS_BF_10.xlsx")
+save(outliers_T_adapcon_gentree_BAYPASS_BF_10, file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/outliers_T_adapcon_gentree_BAYPASS_BF_10.Rdata")
+```
+
+
+We can also make a less conservative dataset with a threshold of BF>8: 
+```{r threshold BF 8}
+thres_BF <- 8 #relax threshold
+
+
+for(x in 1:6){
+  #names of the corr matrix for each biovariable
+  names_climatic_var <- names_climatic_variables[x]
+  data <- get(list_mean_BF_clim[x])
+  
+ selection_outliers <- data.frame(Loci=data$names_snps[which(data$BF_values>thres_BF)],BF = data$BF_values[which(data$BF_values>thres_BF)], climatic_variables=names_climatic_var)
+ 
+ assign(paste0("names_outliers_",names_climatic_var),selection_outliers)
+ 
+ # Count the number of candidates for each climatic variable
+  count <- data.frame(Climatic_variable=names_climatic_var,Number_outliers=nrow(selection_outliers))
+  
+  #name the corr_bio with names_corr
+assign(paste0("outliers_",names_climatic_var),count)
+}
+  # Combine the results for each climatic variable to see the number of candidates
+  outliers_summary_BF_8 <- rbind(outliers_Annual_Tc,outliers_Diurnal_range_Tc,outliers_Tc_Seasonality,outliers_Tc_driest_quarter,outliers_Annual_P,outliers_P_Seasonality)
+
+
+#name of the candidates
+  
+  outliers_names_summary_BF8 <- rbind(names_outliers_Annual_Tc,names_outliers_Diurnal_range_Tc,names_outliers_Tc_Seasonality,names_outliers_Tc_driest_quarter,names_outliers_Annual_P,names_outliers_P_Seasonality)
+  
+  
+  
+  #finally we can search for same candidates across climatic variables
+
+duplicated_loci_BF_8 <- duplicated(outliers_names_summary_BF8$Loci) | duplicated(outliers_names_summary_BF8$Loci, fromLast = TRUE)
+
+# Subset the data frame to show only the duplicated loci
+duplicated_outliers_BF_8 <- outliers_names_summary_BF8[duplicated_loci_BF_8, ]
+
+#Number of candidates: 
+outliers_summary_BF_8
+
+#at the climatic var scale
+nrow(outliers_names_summary_BF8)
+```
+
+
+We can see that 111 candidates are identified using BAYPASS:        
+- Bio 1:   13  
+- Bio 2:   17 
+- Bio 4:   35  
+- Bio 9:   20  
+- Bio 12:  13  
+- Bio 15:  35  
+  
+Additionally 8 candidates are identified by 2 climatic variables. 
+
+Finally, we saved the set of candidates for downstream analysis 
+```{r save candidates set LC}
+
+outliers_T_adapcon_gentree_BAYPASS_BF_8 <- outliers_names_summary_BF8[,-2]
+
+#write_xlsx(outliers_T_adapcon_gentree_BAYPASS_BF_8,"C:/Users/tfrancisco/Documents/Thèse/Results/species/taxus/GEA/outliers/outliers_T_adapcon_gentree_BAYPASS_BF_8.xlsx")
+save(outliers_T_adapcon_gentree_BAYPASS_BF_8, file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEa_new_var/outliers/outliers_T_adapcon_gentree_BAYPASS_BF_8.Rdata")
+
+```
+
+
+### Overlapping SNPs across 5 runs
+
+Another method for identifying outliers is by looking for overlapping SNPs across 5 runs, similar to the approach used in GF, rather than relying on the mean values of Bayes Factor (BF).
+```{r calculation of thresholds}
+
+list_clim <- c("Annual_Tc","Diurnal_range_Tc","Tc_Seasonality","Tc_driest_quarter","Annual_P","P_Seasonality")
+list_runs <- c("RUN_1_BAYPASS_results","RUN_2_BAYPASS_results","RUN_3_BAYPASS_results","RUN_4_BAYPASS_results","RUN_5_BAYPASS_results")
+
+for(x in 1:length(list_runs)){
+
+  data <- get(list_runs[x])
+
+for(i in 1:length(list_clim)){
+  
+  clim_name <- list_clim[i]
+  
+  data_clim <- data %>% filter(climatic_variables..c.1..2.. == clim_name)
+   
+ #BF values > 8
+outliers_BF_8 <- data_clim[,c(12,2,8)] %>% filter(BF.dB.> 8) %>% pull(names_snps) 
+
+ assign(paste0("Run",x,"_outliers_BF_8_",clim_name),outliers_BF_8)
+
+ #BF values > 10
+outliers_BF_10 <- data_clim[,c(12,2,8)] %>% filter(BF.dB.> 10) %>% pull(names_snps) 
+
+ assign(paste0("Run",x,"_outliers_BF_10_",clim_name),outliers_BF_10)
+ 
+  }
+}
+```
+
+```{r select the overlapping candidates across runs and save them 1%}
+
+list_threshold <- c(8,10)
+
+for(i in 1:length(list_threshold)){
+  
+threshold <- list_threshold[i]
+
+for(x in 1:length(list_clim)){
+  
+  clim_var <- list_clim[x]
+  data1 <- get(paste0("Run",1,"_outliers_BF_",threshold,"_",clim_var))
+  data2 <- get(paste0("Run",2,"_outliers_BF_",threshold,"_",clim_var))
+  data3 <- get(paste0("Run",3,"_outliers_BF_",threshold,"_",clim_var))
+  data4 <- get(paste0("Run",4,"_outliers_BF_",threshold,"_",clim_var))
+  data5 <- get(paste0("Run",5,"_outliers_BF_",threshold,"_",clim_var))
+  
+  #Select only the candidates identified in all 5 runs
+outliers_set <- Reduce(intersect, list(data1,data2,data3,data4,data5))
+
+  assign(paste0("outliers_",clim_var,"_",threshold),outliers_set)  
+
+  }
+}
+```
+See the final set of outliers
+
+```{r set outliers}
+list_threshold <- c(8,10) # Replace with your actual threshold values
+clim_vars <- c("Annual_Tc", "Diurnal_range_Tc", "Tc_Seasonality", "Tc_driest_quarter", "Annual_P", "P_Seasonality")
+
+df_tot_outliers_list <- list()
+
+for (x in 1:length(list_threshold)) {
+  threshold <- list_threshold[x]
+  combined_data <- data.frame()
+
+  for (var in clim_vars) {
+    data <- data.frame(set = get(paste0("outliers_", var, "_", threshold)))
+    data$var <- var
+    combined_data <- rbind(combined_data, data)
+  }
+
+  unique_data <- combined_data[!duplicated(combined_data$set),]  # Ensuring unique rows
+  df_tot_outliers_list[[threshold]] <- unique_data
+
+  assign(paste0("df_tot_outliers_", threshold), unique_data)
+}
+
+```
+
+
