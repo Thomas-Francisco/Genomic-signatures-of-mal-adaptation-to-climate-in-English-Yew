@@ -3,7 +3,7 @@ English yew is a long-lived tree widely distributed in Europe from sea level up 
 
 # Scripts
 
-All the scripts associated to the HTML presented below are available in the folder /Scripts
+All the scripts associated to the HTML presented below are available in the folder [Scripts](https://github.com/Thomas-Francisco/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/tree/main/Scripts)
 
 ## Formatting genomic and climatic data
 
