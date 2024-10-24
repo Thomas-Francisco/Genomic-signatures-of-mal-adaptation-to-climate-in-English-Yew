@@ -22,6 +22,12 @@ Genomic and climatic data for the range-wide populations were formatted to perfo
 - Identification of the main climatic drivers in our dataset by : pre-selecting the climatic variables, identifying the most important variables to explain the genomic variation using OrdiR2step, removing over-collinear variables and calculating the variance inflation factor (VIF).
 - Calculation of the future climatic data as the mean values from five global climate models (GCMs) under the socio-economic pathway 3-7.0 for the 2041-2060 period.
 
+### [2. Population structure](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/Population_structure.html)
+
+- Principal component analyses at the individual and population levels
+- STRUCTURE clustering analysis
+- Graphical representation 
+
 ### Phenotypic data clonal bank
 
 soon
@@ -30,9 +36,6 @@ soon
 
 soon
 
-### Population structure
-
-soon
 
 ## Insights into the potental local adaptation to climate
 
