@@ -1,0 +1,335 @@
+---
+title: "Genomic_offset_Clonal_bank"
+author: "Thomas Francisco"
+date: "2024-09-10"
+output:
+  html_document:
+    number_sections: true #titles
+    toc: true #table of content
+    toc_float: true # enable the toc to be on the side of the text, always visible
+    collapsed: True #control if the toc label will only display top level titles
+    toc_depth: 3
+---
+
+
+```{r setup, include=FALSE}
+rm(list = ls())
+knitr::opts_chunk$set(
+	message = FALSE,
+	warning = FALSE,
+	cache = FALSE
+)
+library(ggplot2)
+library(gradientForest)
+library(pdist)
+library(corrplot)
+library(dplyr)
+library(rnaturalearth)
+library(ggcorrplot)
+library(vegan)
+```
+
+
+# Introduction
+
+This script calculates the genomic offset predictions for the populations in the common garden. The goal is to assess whether there is a relationship between fitness and the genomic offset (GO) predictions, which will help us evaluate the accuracy of our model. The genomic offset is calculated as the distance between the genomic composition  predicted by the GEA model in the climate of the population and in the common garden. Populations whith higher genomic offset (i.e. the ones with the most different local adaptation) should exhibit lower fitness in the common garden.
+To achieve this, we are utilizing an indenpend set of populations planted in a single clonal bank garden located in central Spain (Segovia).
+
+# Data 
+
+```{r meta_data}
+meta_data <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Populations/Populations_common_garden.csv",h=T,sep=";",dec=",")
+```
+
+
+## Climatic data
+
+```{r load df clim data}
+
+list_climate <- c("clim_df_scale_CG_2012","clim_df_scale_CG_2021","clim_df_natural_pop")
+
+for(i in 1:length(list_climate)){
+  
+  climate <- list_climate[i]
+  load(file=paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/validation_GO/climatic_data/",climate,".Rdata"))
+}
+```
+
+We need to add the climatic data for each populations for the CG df: 
+```{r clim data }
+clim_data_replicated_2012 <- clim_df_scale_CG_2012[rep(1, 26), ] 
+clim_df_tot_scale_CG_2012 <- data.frame(Population=meta_data$Population,clim_data_replicated_2012)
+
+clim_data_replicated_2021 <- clim_df_scale_CG_2021[rep(1, 26), ] 
+clim_df_tot_scale_CG_2021 <- data.frame(Population=meta_data$Population,clim_data_replicated_2021)
+```
+
+
+# Genomic offset using Redundancy analysis
+
+## GEA models
+
+We predicted the genomic composition for the populations both in their natural habitat and in the common garden. 
+
+Load GEA models 
+```{r load GEA models}
+list_models <- c("model_GEA_RDA_all","model_GEA_RDA_random","model_GEA_RDA_random_same_AF","model_GEA_RDA_CG","model_GEA_RDA_outliers_LC","model_GEA_RDA_outliers_MC")
+
+for(x in 1:length(list_models)){
+  
+  name_model<- list_models[x]
+  load(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/RDA/data/models/",name_model,".Rdata"))
+}
+```
+
+## Initial genomic data
+
+We also need to load the initial genomic data used to build the model, as well as the outlier set. Indeed, the predict function requires this information because the model does not retain the data and need it to run the model with new data.
+```{r genomic data}
+#genomic data
+load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/data_allelic_frequencies_29pop_adapcon_gentree_475_8616.Rdata")
+
+genomic_matrix <- data_allelic_frequencies_29pop_adapcon_gentree_475_8616  
+
+
+list_models <- c("random_neutral_set_SNPs_T_adapcon_gentree_bis","random_set_taxus","outliers_set_final_overlapping_no_LD_LC_new_var","outliers_set_final_overlapping_no_LD_new_var")
+for(i in 1:length(list_models)){
+  model <- list_models[i]
+  load(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/",model,".Rdata"))
+}
+
+list_random_SNPs <- colnames(random_neutral_set_SNPs_T_adapcon_gentree_bis)
+list_random_SNPs_same_AF <- random_set_taxus$name_snps
+
+#CG common
+load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/gen_matrix_imp_CG.Rdata")
+CG_common_set <- intersect(outliers_set_final_overlapping_no_LD_LC_new_var, colnames(gen_matrix_imp_CG))
+save(CG_common_set,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/CG_common_set.Rdata")
+```
+
+
+Now, based on these models, we calculated the two genomic compositions. We can use the predict function to do this
+```{r predictions_adaptive_values}
+list_rda <- c("model_GEA_RDA_all","model_GEA_RDA_random","model_GEA_RDA_random_same_AF","model_GEA_RDA_outliers_LC","model_GEA_RDA_outliers_MC","model_GEA_RDA_CG")
+list_set <- c("all","random","random_same_AF","LC","MC","CG")
+
+K = 2 # number of rda axes retained
+
+for(i in 1:length(list_rda)){
+  rda_model <- get(list_rda[i])
+  set <- list_set[i]
+  # Natural populations
+  clim_natural_pop <- get("clim_df_natural_pop")
+  predictions_natural_pop <- data.frame(Population = meta_data$Population, predict(rda_model, clim_natural_pop, type = "lc", rank = K, scaling = "none"))
+  assign(paste0("adaptive_values_", set, "_natural_pop"), predictions_natural_pop)
+  
+  # Common garden 2012
+  clim_common_garden_2012 <- get("clim_data_replicated_2012")
+  predictions_common_garden_2012 <- data.frame(Population = meta_data$Population, predict(rda_model, clim_common_garden_2012, type = "lc", rank = K, scaling = "none"))
+  assign(paste0("adaptive_values_", set, "_common_garden_2012"), predictions_common_garden_2012)
+  
+  # Common garden 2021
+  clim_common_garden_2021 <- get("clim_data_replicated_2021")
+  predictions_common_garden_2021 <- data.frame(Population = meta_data$Population, predict(rda_model, clim_common_garden_2021, type = "lc", rank = K, scaling = "none"))
+  assign(paste0("adaptive_values_", set, "_common_garden_2021"), predictions_common_garden_2021)
+}
+```
+
+
+### Genomic offset
+      
+Now we calculated the genomic offset with these genomic compositions 
+```{r genomic offset function RDA}
+genomic_offset_pop <- function(RDA, K, Past_score, Future_score,meta_data){
+# Weights based on axis eigen values
+  weights <- RDA$CCA$eig/sum(RDA$CCA$eig)
+  
+  # Weighing the current and future adaptive indices based on the eigen values of the associated axes
+  Past_score_df <- Past_score[,-c(1)]
+  Proj_offset_past <- as.data.frame(do.call(cbind, lapply(1:K, function(x) Past_score_df[,x]*weights[x])))
+  Future_score_df <- Future_score[,-c(1)]
+  Proj_offset_fut <- as.data.frame(do.call(cbind, lapply(1:K, function(x) Future_score_df[,x]*weights[x])))
+  
+  
+  #Now we want to calculate the distance between present and future for each RDA axis before doing it for both axis simultaneously
+  Proj_offset <- list() 
+  for(i in 1:K){
+  Proj_offset[[i]] <- abs(Proj_offset_past[[i]] - Proj_offset_fut[[i]])
+      names(Proj_offset)[i] <- paste0("RDA", as.character(i))
+  }
+  
+  
+  # Predict a global genetic offset, incorporating the K first axes weighted by their eigen values
+  ras <- Proj_offset[[1]] #we reused the format of the previous distance per RDA axis
+  ras[!is.na(ras)] <- unlist(lapply(1:nrow(Proj_offset_past), function(x) dist(rbind(Proj_offset_past[x,], Proj_offset_fut[x,]), method = "euclidean"))) #calculation of the euclidean distance on the non Na values of the previous distance -> that why we used the format of the previous distance, to be sure to only select the rows without Nas because they are not deal by euclidean distance,
+  #the euclidean distance is still calculated on the weighted data (not the previous distance but on the genomic composition weighted)
+  names(ras) <- "Global_offset"
+  Proj_offset_global <- ras
+  
+  # Return prediction of genetic offset for each RDA axis and a global genetic offset for each population
+  return(list(Population=meta_data$Population,Proj_offset = Proj_offset, Proj_offset_global = Proj_offset_global, weights = weights[1:K]))
+}
+
+```
+
+We ran the function on the predicted genomic compo:
+```{r genomic offset calculation}
+list_rda <- c("model_GEA_RDA_all","model_GEA_RDA_random","model_GEA_RDA_random_same_AF","model_GEA_RDA_outliers_LC","model_GEA_RDA_outliers_MC","model_GEA_RDA_CG")
+list_name <- c("all","random", "random_same_AF", "LC", "MC", "CG")
+
+K = 2  # Number of RDA axes retained
+
+# Loop over the RDA models
+for (x in 1:length(list_rda)) {
+  RDA <- get(list_rda[x])
+  name <- list_name[x]
+  
+  # Load adaptive values for natural populations
+  adaptive_natural_score <- get(paste0("adaptive_values_", name, "_natural_pop"))
+  
+  # Load adaptive values for common garden 2012
+  CG_2012_score <- get(paste0("adaptive_values_", name, "_common_garden_2012"))
+  
+  # Load adaptive values for common garden 2021
+  CG_2021_score <- get(paste0("adaptive_values_", name, "_common_garden_2021"))
+  
+  # Run the genomic offset calculation for Natural Populations with CG_2012
+  Run_genomic_offset_pop_CG2012 <- genomic_offset_pop(RDA, K, adaptive_natural_score, CG_2012_score, meta_data)
+  
+  # Create a dataframe for CG_2012 results
+  genomic_offset_df_CG2012 <- data.frame(
+    Population = unlist(Run_genomic_offset_pop_CG2012$Population),
+    Genomic_offset_CG2012 = unlist(Run_genomic_offset_pop_CG2012$Proj_offset_global)
+  )
+  
+  # Order the dataframe by population
+  genomic_offset_df_CG2012 <- genomic_offset_df_CG2012[order(genomic_offset_df_CG2012$Population),]
+  colnames(genomic_offset_df_CG2012) <- c("Population", paste0("GO_", name, "_CG2012"))
+  
+  # Save the results for CG_2012
+  assign(paste0("GO_RDA_", name, "_CG2012_Taxus"), genomic_offset_df_CG2012)
+  save(list = paste0("GO_RDA_", name, "_CG2012_Taxus"), file = paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/Standard_GO/RDA/data/CG_period/GO_RDA_", name, "_CG2012_Taxus.Rdata"))
+  
+  # Run the genomic offset calculation for Natural Populations with CG_2021
+  Run_genomic_offset_pop_CG2021 <- genomic_offset_pop(RDA, K, adaptive_natural_score, CG_2021_score, meta_data)
+  
+  # Create a dataframe for CG_2021 results
+  genomic_offset_df_CG2021 <- data.frame(
+    Population = unlist(Run_genomic_offset_pop_CG2021$Population),
+    Genomic_offset_CG2021 = unlist(Run_genomic_offset_pop_CG2021$Proj_offset_global)
+  )
+  
+  # Order the dataframe by population
+  genomic_offset_df_CG2021 <- genomic_offset_df_CG2021[order(genomic_offset_df_CG2021$Population),]
+  colnames(genomic_offset_df_CG2021) <- c("Population", paste0("GO_", name, "_CG2021"))
+  
+  # Save the results for CG_2021
+  assign(paste0("GO_RDA_", name, "_CG2021_Taxus"), genomic_offset_df_CG2021)
+  save(list = paste0("GO_RDA_", name, "_CG2021_Taxus"), file = paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/Standard_GO/RDA/data/CG_period/GO_RDA_", name, "_CG2021_Taxus.Rdata"))
+}
+```
+
+
+# Genomic offset Gradient forest
+
+## GEA models
+
+Load the GEA models
+```{r load GEA GF models}
+list_models <- c("all","random_bis","random_same_AF_bis","LC","CG")
+
+for(i in 1:length(list_models)){
+  model <- list_models[i]
+  load(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/GF/RUNs/Run_GEA_GF_",model,".Rdata"))
+}
+```
+
+
+## Interpolate/extrapolate the GEA relationship and calculate genomic offset
+```{r genomic offset function GF}
+########## calculate adaptive offset for populations in space or time
+genomic_offset_function <- function(gfMod, vars, env1, env2, combined=F,
+                       pops = envPop$pop_code, weighted=FALSE){
+  
+  #gfMod = gf model for prediction
+  #vars = names of env variables
+  #env2 = new environment (new place / time)
+    transEnv2 <- predict(gfMod, env2[,vars]) #new env
+    transEnv1 <- predict(gfMod, env1[,vars]) #current env
+  
+  #calculate Euclidean distance in transformed env space
+  num <- nrow(transEnv1)
+  dOut <- lapply(1:num, function(x, tEnv1, tEnv2){
+    as.numeric(pdist(tEnv1[x,],  tEnv2[x,])@dist)}, tEnv2=transEnv2, tEnv1=transEnv1)
+  return(dOut)
+}
+```
+
+We can apply this function to our dataset: 
+```{r Run genomic offset function}
+list_set <- c("Run_GEA_GF_all","Run_GEA_GF_random_bis","Run_GEA_GF_random_same_AF_bis","Run_GEA_GF_LC","Run_GEA_GF_CG")
+list_CG <- c("2012","2021")
+vars <- colnames(clim_df_natural_pop)
+list_name <- c("all","random","random_same_AF","LC","CG")
+
+#vars = past climatic data used in GEA
+
+for(i in 1: length(list_set)){
+  
+  GF_run <- get(list_set[i])
+  
+  name <- list_name[i]
+
+for(x in 1:length(list_CG)){
+  
+  
+  name_clim <- list_CG[x]
+  climate_CG <- get(paste0("clim_df_tot_scale_CG_",name_clim))
+
+  climate_pop <- clim_df_natural_pop
+  
+Genomic_offset <- genomic_offset_function(gfMod=GF_run, vars=vars, env1=climate_pop , env2=climate_CG, combined=F,
+                       pops = clim_df_tot_scale_CG_2012$Population, weighted=FALSE)
+
+#extraction GO values
+Genomic_offset$values <- unlist(Genomic_offset)
+genomic_offset_GF <- data.frame(Population=clim_df_tot_scale_CG_2012$Population,GO=Genomic_offset$values)
+names(genomic_offset_GF)[2] <- paste0("genomic_offset_GF_",name)
+assign(paste0("GO_standard_GF_",name,"_",name_clim),genomic_offset_GF)
+#save
+ save(list = paste0("GO_standard_GF_",name,"_",name_clim),file=paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/standard_GO/GF/data/CG_period/GO_standard_GF_",name,"_",name_clim,".Rdata"))
+  }
+}
+```
+
+
+# Draft
+```{r draft genomic offset,eval=F,echo=T}
+list_rda <- c("model_GEA_RDA_all","model_GEA_RDA_random","model_GEA_RDA_random_same_AF","model_GEA_RDA_outliers_LC","model_GEA_RDA_outliers_MC","model_GEA_RDA_CG")
+
+list_natural_habitat_score <- c("adaptive_values_all_natural_pop","adaptive_values_random_natural_pop","adaptive_values_random_same_AF_natural_pop","adaptive_values_LC_natural_pop","adaptive_values_MC_natural_pop","adaptive_values_CG_natural_pop")
+list_CG_score <- c("adaptive_values_all_common_garden","adaptive_values_random_common_garden","adaptive_values_random_same_AF_common_garden","adaptive_values_LC_common_garden","adaptive_values_MC_common_garden","adaptive_values_CG_common_garden")
+list_name <- c("all","random","random_same_AF","LC","MC","CG")  
+
+for(x in 1:length(list_rda)){
+RDA <- get(list_rda[x])
+  adaptive_natural_score <- get(list_natural_habitat_score[x])
+  CG_score <- get(list_CG_score[x])
+  name <- list_name[x]
+
+  
+  #run this function on our populations
+Run_genomic_offset_pop<- genomic_offset_pop(RDA,2,adaptive_natural_score,CG_score,meta_data)
+#df
+ genomic_offset_df<- data.frame(Population=unlist(Run_genomic_offset_pop$Population),Genomic_offset_random=unlist(Run_genomic_offset_pop$Proj_offset_global))
+ #order the df per population
+ Genomic_offset_Taxus_Adapcon_Gentree_RDA <- genomic_offset_df[order(genomic_offset_df$Population),]
+ colnames(Genomic_offset_Taxus_Adapcon_Gentree_RDA) <- c("Population",paste0("GO_",name)) 
+ 
+ assign(paste0("GO_RDA_",name,"_standard_Taxus"),Genomic_offset_Taxus_Adapcon_Gentree_RDA)
+ 
+ #save
+ save(list = paste0("GO_RDA_",name,"_standard_Taxus"),file=paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/standard_GO/RDA/data/GO_RDA_",name,"_standard_Taxus.Rdata"))
+}
+```
+
