@@ -88,7 +88,13 @@ Local adaptation to climate have been investigated by first searching for isolat
   
 ## Genomic offset predictions
 
-Soon
+### [12. RDA genomic offset and AGD index](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/RDA_Genomic_offset.html)
+
+- RDA GEA model
+- Comparison loading and predicted RDA approaches
+- Adaptive genomic disruption (residuals) calculation for the RDA reference period model
+- Genomic offset using predicted genomic composition
+- Genomic offset using observed genomic composition for the reference period
 
 ## Evaluation of the GEA models and the genomic offset predictions
 
