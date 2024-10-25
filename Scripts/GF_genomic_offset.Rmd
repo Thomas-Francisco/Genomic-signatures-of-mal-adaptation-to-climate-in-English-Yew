@@ -1,0 +1,544 @@
+---
+title: "GF_genomic_offset"
+author: "Thomas Francisco"
+date: "2024-05-15"
+output:
+  html_document:
+    number_sections: true #titles
+    toc: true #table of content
+    toc_float: true # enable the toc to be on the side of the text, always visible
+    collapsed: True #control if the toc label will only display top level titles
+    toc_depth: 3
+---
+```{r setup, include=FALSE}
+rm(list = ls())
+knitr::opts_chunk$set(
+	message = FALSE,
+	warning = FALSE,
+	cache = FALSE
+)
+library(ggplot2)
+library(gradientForest)
+library(pdist)
+library(corrplot)
+library(dplyr)
+library(rnaturalearth)
+```
+
+# Introduction 
+
+This script aims to calculate the genomic offset using gradient forest. The genomic offset concept have already been explained in the script RDA_genomic_offset.
+    
+Here, the GEA relationship was estimated using the Gradient forest machine learning method (see explanations in the GF_candidate_selection script).
+
+# Data
+
+## Climatic data
+      
+```{r meta data}
+meta_data_pop <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Populations/taxus_sample_29pop.csv",h=T,sep=";",dec=",")
+#alphabetic order
+meta_data_pop_order <- meta_data_pop[order(meta_data_pop$Population),]
+```
+
+
+Climatic data need to be in a dataframe:
+```{r load Past climatic data}
+#Past climatic data
+past_climatic <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_data/new_selection/Past_new_6_Climatic_data_scale_df.csv",sep=";",dec=",")
+vars <- colnames(past_climatic[,-c(1:2)])
+```
+
+- Present climatic data: 
+```{r load present climatic data}
+#Present climatic data
+present_climatic <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/validation_GO/climatic_data/Present_climatic_data_T_adapcon_gentree_scaled.csv",sep=";",dec=",")
+```
+
+- Future climatic data: 
+```{r future clim data}
+future_climatic <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_data/new_selection/Future_climatic_data_T_adapcon_gentree_scaled.csv",sep=";",dec=",")
+```
+ 
+## Genomic data
+
+```{r genomic data}
+#genomic data
+load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/data_allelic_frequencies_29pop_adapcon_gentree_475_8616.Rdata")
+genomic_matrix <- data_allelic_frequencies_29pop_adapcon_gentree_475_8616
+```
+
+## Set of SNPs
+
+We can also load the sets of retained SNPs.   
+We have several sets:  
+- One with random SNPs  
+- One with random SNPs with the same AF as the set of outliers (LC)  
+- One with less conservative thresholds  
+- One with more conservative thresholds  
+- One with the LC SNPs in common with the genomic data of the clonal bank populations   
+```{r load set of markers}
+list_set <- c("random_neutral_set_SNPs_T_adapcon_gentree_bis","random_set_taxus","outliers_set_final_overlapping_no_LD_LC_new_var","outliers_set_final_overlapping_no_LD_new_var","CG_common_set")
+
+for(i in 1:length(list_set)){
+  
+  set <- list_set[i]
+  
+  load(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/",set,".Rdata"))
+}
+list_random_SNPs <- colnames(random_neutral_set_SNPs_T_adapcon_gentree_bis)
+list_random_SNPs_same_AF <- random_set_taxus$name_snps
+```
+      
+# GEA relationship
+
+The next step is to calculate the relationship between the outliers and climatic variables using the nonlinear model of Gradient Forest (GF). This follows the same principle as candidate selection with GF; however, here we will summarize the information in the turnover function for each SNP using all predictors to create a single turnover function for all response variables.
+
+- Model with all the SNPs:
+```{r GEA using gradient forest all snps}
+#Run_GEA_GF_all <- gradientForest(data.frame(past_climatic[,vars],genomic_matrix), 
+#                             predictor.vars=vars, 
+#                             response.vars=colnames(genomic_matrix),
+#                            corr.threshold=0.5, ntree=500, trace=T)
+
+#length(Run_GEA_GF_all$result)
+```
+
+```{r save GEA GF random, include=FALSE}
+#save(Run_GEA_GF_all,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/GF/RUNs/Run_GEA_GF_all.Rdata")
+```
+
+- Other models:
+```{r GEA using gradient forest}
+#list_set <- c("list_random_SNPs","list_random_SNPs_same_AF","outliers_set_final_overlapping_no_LD_LC_new_var","outliers_set_final_overlapping_no_LD_new_var","CG_common_set")
+#list_name <- c("random","random_same_AF","LC","MC","CG")
+
+#for(i in 1:lenght(list_set)){
+  
+#  set <- get(list_set[i])
+#  name <- list_name[i]
+  
+  #Run_GEA_GF <- gradientForest(data.frame(past_climatic[,vars],genomic_matrix[set]), 
+#                             predictor.vars=vars, 
+#                             response.vars=colnames(genomic_matrix[set]),
+#                            corr.threshold=0.5, ntree=500, trace=T)
+
+#length(Run_GEA_GF$result)
+  
+  #assign(paste0("Run_GEA_GF_",name),Run_GEA_GF)
+#}
+```
+
+
+```{r save GEA GF}
+#list_model <- c("all","random","random_same_AF","LC","MC","CG")
+
+#for(i in 1:length(list_model)){
+  
+#  model <- list_model[i]
+  
+#  save(list = paste0("Run_GEA_GF_", model), file = paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/GF/RUNs/Run_GEA_GF_",model,".Rdata"))
+#}
+```
+
+```{r load GEA GF}
+
+list_model <- c("all","random","random_same_AF","LC","MC","CG")
+
+for(i in 1:length(list_model)){
+  
+  model <- list_model[i]
+  
+load(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/GF/RUNs/Run_GEA_GF_",model,".Rdata"))
+}
+```
+
+Example LC set:  We can see that 83 out of the 98 outliers are associated with some of the predictors. These 83 SNPs will be used by Gradient Forest (GF) in the next step to estimate the genomic offset.  
+
+# Interpolate/extrapolate the GEA relationship and calculate genomic offset
+      
+Now that we have our GEA models, we can interpolate/extrapolate the relationship across space and time to estimate the past and future genomic composition for calculating the genomic offset metric. To do this, we modified the function from Matthew C. Fitzpatrick (github: https://github.com/fitzLab-AL/geneticOffsetR/blob/main/poplarGBS.gf.supportFunctions.R). 
+      
+## Function
+
+```{r genomic offset function}
+########## calculate adaptive offset for populations in space or time
+genomic_offset_function <- function(gfMod, vars, env2, combined=F,
+                       pops = envPop$pop_code, weighted=FALSE){
+  
+  #gfMod = gf model for prediction
+  #vars = names of env variables
+  #env2 = new environment (new place / time)
+    transEnv2 <- predict(gfMod, env2[,vars]) #new env
+    transEnv1 <- predict(gfMod) #current env
+  
+  #calculate Euclidean distance in transformed env space
+  num <- nrow(transEnv1)
+  dOut <- lapply(1:num, function(x, tEnv1, tEnv2){
+    as.numeric(pdist(tEnv1[x,],  tEnv2[x,])@dist)}, tEnv2=transEnv2, tEnv1=transEnv1)
+  return(dOut)
+}
+```
+
+## Models
+
+We can apply this function to our dataset: 
+```{r Run genomic offset function}
+list_set <- c("Run_GEA_GF_all","Run_GEA_GF_random","Run_GEA_GF_random_same_AF","Run_GEA_GF_LC","Run_GEA_GF_MC","Run_GEA_GF_CG")
+list_period <- c("present", "future")
+
+#vars = past climatic data used in GEA
+
+for(i in 1: length(list_period)){
+  
+  period <- list_period[i]
+
+
+for(x in 1:length(list_set)){
+  GF_run <- get(list_set[x])
+  name <- c("all","random","random_same_AF","LC","MC","CG")
+  
+  
+  climate_to_calculate_GO <- get(paste0(period,"_climatic"))
+  
+Genomic_offset <- genomic_offset_function(gfMod=GF_run, vars=vars, env2=climate_to_calculate_GO[,vars], combined=F,
+                       pops = row.names(genomic_matrix), weighted=FALSE)
+
+#extraction GO values
+Genomic_offset$values <- unlist(Genomic_offset)
+
+genomic_offset_GF <- data.frame(Population=row.names(genomic_matrix),GO=Genomic_offset$values)
+names(genomic_offset_GF)[2] <- paste0("genomic_offset_GF_",name[x])
+
+assign(paste0("genomic_offset_GF_",name[x],"_",period),genomic_offset_GF)
+  }
+}
+```
+
+```{r save genomic offset values, include=FALSE}
+list_period <- c("present","future")
+list_set <- c("all","random","random_same_AF","LC","MC","CG")
+
+for(i in 1:length(list_set)){
+  set <- list_set[i]
+  for(x in 1:length(list_period)){
+    period <- list_period[x]
+    name_file <- paste0(set,"_",period)
+    
+  file_save<- get(paste0("genomic_offset_GF_",set,"_",period))
+  name <- paste0("GO_T_Adapcon_Gentree_GF_",name_file)
+  assign(name,file_save)
+  save(list = name,file=paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/GF/data/",name,".Rdata"))
+  }
+}
+```
+
+## Graphical representations
+
+Based on these genomic offset values, we can create similar plots to the ones for RDA GO, displaying the values for each population.
+```{r plot GO values,echo=T,eval=F}
+list_period <- c("present","future")
+list_set <- c("all","random","random_same_AF","LC","MC","CG")
+
+for(i in 1:length(list_period)){
+  
+  period <- list_period[i]
+  
+  for(x in 1: length(list_set)){
+    
+    set <- list_set[x]
+GO_df <- get(paste0("GO_T_Adapcon_Gentree_GF_",set,"_",period))
+    
+     #first, we need to add the coordinates
+Genomic_offset_coord <- merge(GO_df,meta_data_pop_order[,c(2,4,5)],"Population")
+
+#transform longitude and latitude to numeric variables
+Genomic_offset_coord <- Genomic_offset_coord %>% mutate(Longitude=as.numeric(Longitude),Latitude=as.numeric(Latitude))
+
+
+colors <- c( "darkgreen", "#FDF7B3","#FC4E2A","#BD0026","darkorchid4")
+#background map
+admin <- ne_countries(scale = "medium", returnclass = "sf")
+      
+plot <- ggplot(data = Genomic_offset_coord) + 
+  geom_sf(data = admin, fill = gray(0.92), size = 0) +
+  geom_point(aes(x = Longitude, y = Latitude, fill = cut_number(Genomic_offset_coord[,2], n = 5)), shape = 21,size=3, color = "black") +
+  scale_fill_manual(
+    values = colors,
+    labels = c("low values","","","","high values"),
+    drop = FALSE,na.translate = FALSE)+  # Ensure all levels are shown in the legend
+  geom_sf(data = admin, fill = NA, size = 0.1) +
+  coord_sf(xlim = c(-10, 30), ylim = c(35, 62), expand = FALSE) +
+  xlab("Longitude") + ylab("Latitude") +
+  guides(fill = guide_legend(title = "Genomic offset")) +
+  ggtitle(paste0("Genomic offset across populations ",set," ",period)) +
+  theme_bw(base_size = 11) +
+  theme(legend.position="right", panel.grid = element_blank(), strip.text = element_text(size=11),plot.title = element_text(hjust = 0.5,color = "Black",face="italic"))
+      
+print(plot) 
+
+#save
+     pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/GF/figures/GO/Genomic_offset_across_populations_",set,"_",period,".pdf"));print(plot);dev.off()
+  }
+}
+```
+
+```{r graph rmarkdown 1, echo=FALSE}
+list_period_rmarkdown <- c("present","future")
+list_set_rmarkdown <- c("LC")
+
+for(i in 1:length(list_period_rmarkdown)){
+  period <- list_period_rmarkdown[i]
+  for(x in 1: length(list_set_rmarkdown)){
+    set <- list_set_rmarkdown[x]
+GO_df <- get(paste0("GO_T_Adapcon_Gentree_GF_",set,"_",period))
+     #first, we need to add the coordinates
+Genomic_offset_coord <- merge(GO_df,meta_data_pop_order[,c(2,4,5)],"Population")
+#transform longitude and latitude to numeric variables
+Genomic_offset_coord <- Genomic_offset_coord %>% mutate(Longitude=as.numeric(Longitude),Latitude=as.numeric(Latitude))
+colors <- c( "darkgreen", "#FDF7B3","#FC4E2A","#BD0026","darkorchid4")
+#background map
+admin <- ne_countries(scale = "medium", returnclass = "sf")
+plot <- ggplot(data = Genomic_offset_coord) + 
+  geom_sf(data = admin, fill = gray(0.92), size = 0) +
+  geom_point(aes(x = Longitude, y = Latitude, fill = cut_number(Genomic_offset_coord[,2], n = 5)), shape = 21,size=3, color = "black") +
+  scale_fill_manual(
+    values = colors,
+    labels = c("low values","","","","high values"),
+    drop = FALSE,na.translate = FALSE)+  # Ensure all levels are shown in the legend
+  geom_sf(data = admin, fill = NA, size = 0.1) +
+  coord_sf(xlim = c(-10, 30), ylim = c(35, 62), expand = FALSE) +
+  xlab("Longitude") + ylab("Latitude") +
+  guides(fill = guide_legend(title = "Genomic offset")) +
+  ggtitle(paste0("Genomic offset across populations ",set," ",period)) +
+  theme_bw(base_size = 11) +
+  theme(legend.position="right", panel.grid = element_blank(), strip.text = element_text(size=11),plot.title = element_text(hjust = 0.5,color = "Black",face="italic"))
+print(plot) 
+  }
+}
+```
+
+## Correlation across genomic offset prediction  
+
+We observed that there is no clear pattern in the genomic offset; it does not correlate with continentality, coastal proximity, or other discernible patterns. We hypothesized that elevation might influence genomic offset, with populations at higher altitudes potentially exhibiting higher genomic offsets.
+
+```{r correlation GO elevation}
+#load elevation
+
+elevation_data <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_data/ClimateDT_extraction/extraction_climateDT_29pop_T.csv",h=T,sep=";",dec=",")
+
+#merge elevation data with GO
+data_GO_altitude <- data.frame(merge(genomic_offset_GF_LC_present,elevation_data,"Population"))
+data_GO_altitude_df <- data_GO_altitude %>% 
+  mutate(Longitude=as.numeric(Longitude),Latitude=as.numeric(Latitude),elevation=as.numeric(Elevation.DEM_90m.))
+
+#df
+df_tot_GO_predictions_present <- data.frame(Population=genomic_offset_GF_LC_future[,1],GO_all_pres=genomic_offset_GF_all_present[,2],GO_rand_pres=genomic_offset_GF_random_present[,2],GO_rand_same_AF_pres=genomic_offset_GF_random_same_AF_present[,2],GO_LC_pres=genomic_offset_GF_LC_present[,2],GO_MC_pres=genomic_offset_GF_MC_present[,2],GO_CG_pres=genomic_offset_GF_CG_present[,2],elevation=data_GO_altitude_df$elevation)
+
+correlation_present <- cor(df_tot_GO_predictions_present[,-1])
+corrplot(correlation_present, method = "number", addrect = 2, col = c("darkorange","darkred"), type = "lower", tl.col = "black", tl.cex = 0.6, number.cex = 0.6)
+
+df_tot_GO_predictions_future <- data.frame(Population=genomic_offset_GF_LC_future[,1],GO_all_Fut=genomic_offset_GF_all_future[,2],GO_rand_Fut=genomic_offset_GF_random_future[,2],GO_rand_same_AF_Fut=genomic_offset_GF_random_same_AF_future[,2],GO_LC_Fut=genomic_offset_GF_LC_future[,2],GO_MC_Fut=genomic_offset_GF_MC_future[,2],GO_CG_Fut=genomic_offset_GF_CG_future[,2],elevation=data_GO_altitude_df$elevation)
+
+correlation_future <- cor(df_tot_GO_predictions_future[,-1])
+corrplot(correlation_future, method = "number", addrect = 2, col = c("darkorange","darkred"), type = "lower", tl.col = "black", tl.cex = 0.6, number.cex = 0.6)
+```
+
+```{r save corrplot}
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/GF/figures/comparison/correlation_GO_present_values_GF_T_set_period.pdf");corrplot(correlation_present, method = "number", addrect = 2, col = c("darkorange","darkred"), type = "lower", tl.col = "black", tl.cex = 0.6, number.cex = 0.6);dev.off()
+
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/GF/figures/comparison/correlation_GO_future_values_GF_T_set_period.pdf");corrplot(correlation_future, method = "number", addrect = 2, col = c("darkorange","darkred"), type = "lower", tl.col = "black", tl.cex = 0.6, number.cex = 0.6);dev.off()
+```
+We observed a positive correlation between genomic offset and elevation, which vary depending on the set of SNPs used.  
+
+More generally, we can see the same results as for RDA for the correlation between models and periods. 
+For the MC and LC sets, we have almost the same GO values regardless of the period. 
+For the comparison neutral vs outliers set, we have also similar results with an overall correlation of 0.77 and 0.76.  
+We can investigate the rank of populations according to their genomic offset values to further investigate these findings.
+
+## Rank 
+
+```{r Rank of outliers populations,echo=T,eval=F}
+list_period <- c("present","future")
+list_set <- c("all","random","random_same_AF","LC","MC","CG")
+
+for(i in 1:length(list_period)){
+  
+  period <- list_period[i]
+  
+  for(x in 1:(length(list_set)-1)){
+    
+    set <- list_set[x]
+    set2 <- list_set[x+1]
+    
+    #merge two dataset
+GO_RDA_merge <- merge(GO_df <- get(paste0("genomic_offset_GF_",set,"_",period)),GO_df <- get(paste0("genomic_offset_GF_",set2,"_",period)),"Population")
+
+#df
+GO_RDA_set_df<- data.frame(Population= GO_RDA_merge$Population,GO_RDA_1=GO_RDA_merge[,2],GO_RDA_2=GO_RDA_merge[,3])
+
+#RDA_GO rank
+GO_RDA_set_df$rank_1 <- rank(GO_RDA_set_df$GO_RDA_1)
+
+#GF_GO rank
+GO_RDA_set_df$rank_2 <- rank(GO_RDA_set_df$GO_RDA_2)
+
+
+#plot
+GO_RDA_set_df_meta <- merge(GO_RDA_set_df,meta_data_pop_order[,c(1,2)],"Population")
+
+GO_RDA_set_df_meta$Country <- as.factor(GO_RDA_set_df_meta$Country)
+
+Scatterplot <- ggplot(GO_RDA_set_df_meta,aes(x=rank_1,y=rank_2)) +
+  geom_point(aes(color=Country),size=3)+
+  scale_colour_manual(name="Countries",
+                      values = c("orangered3","gold2","darkorchid3","navyblue","turquoise2","green3","blue","red","black","gray","orange","darkgreen")) +
+  geom_abline(intercept = 0, slope = 1, color="gray60")+
+    ggtitle(paste0("Comparison GO rank of populations RDA ",set,"/",set2," ",period))+ 
+    theme_set(theme_bw())
+
+plot(Scatterplot)
+
+
+pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/GF/figures/comparison/Scatterplot_comparison_rank_pop_",set,"_",set2,"_",period,"_Taxus.pdf"));print(Scatterplot);dev.off()
+  }
+}
+```
+
+```{r graph rmarkdown 2, echo=FALSE}
+list_period_rmarkdown <- c("present","future")
+list_set_rmarkdown <- c("LC","MC")
+
+for(i in 1:length(list_period_rmarkdown)){
+  period <- list_period_rmarkdown[i]
+  for(x in 1:(length(list_set_rmarkdown)-1)){
+    set <- list_set_rmarkdown[x]
+    set2 <- list_set_rmarkdown[x+1]
+    #merge two dataset
+GO_RDA_merge <- merge(GO_df <- get(paste0("genomic_offset_GF_",set,"_",period)),GO_df <- get(paste0("genomic_offset_GF_",set2,"_",period)),"Population")
+#df
+GO_RDA_set_df<- data.frame(Population= GO_RDA_merge$Population,GO_RDA_1=GO_RDA_merge[,2],GO_RDA_2=GO_RDA_merge[,3])
+#RDA_GO rank
+GO_RDA_set_df$rank_1 <- rank(GO_RDA_set_df$GO_RDA_1)
+#GF_GO rank
+GO_RDA_set_df$rank_2 <- rank(GO_RDA_set_df$GO_RDA_2)
+#plot
+GO_RDA_set_df_meta <- merge(GO_RDA_set_df,meta_data_pop_order[,c(1,2)],"Population")
+GO_RDA_set_df_meta$Country <- as.factor(GO_RDA_set_df_meta$Country)
+Scatterplot <- ggplot(GO_RDA_set_df_meta,aes(x=rank_1,y=rank_2)) +
+  geom_point(aes(color=Country),size=3)+
+  scale_colour_manual(name="Countries",
+                      values = c("orangered3","gold2","darkorchid3","navyblue","turquoise2","green3","blue","red","black","gray","orange","darkgreen")) +
+  geom_abline(intercept = 0, slope = 1, color="gray60")+
+    ggtitle(paste0("Comparison GO rank of populations RDA ",set,"/",set2," ",period))+ 
+    theme_set(theme_bw())
+plot(Scatterplot)
+  }
+}
+```
+
+
+## Temporal trend
+
+We can also examine the trend of maladaptation to determine whether populations currently exhibiting higher predicted maladaptation will continue to show the same pattern in the future.
+
+```{r trend GO, echo=T,eval=F}
+list_set <- c("all","random","random_same_AF","LC","MC","CG")
+
+for(i in 1:length(list_set)){
+  
+  set <- list_set[i]
+  
+  period_1 <- c("present")
+  period_2 <- c("future")
+  
+  df_pres <- get(paste0("genomic_offset_GF_",set,"_",period_1))
+  df_fut <- get(paste0("genomic_offset_GF_",set,"_",period_2))
+  
+  #df
+df_f_pres <- data.frame(Population = df_pres[,1], Values = df_pres[,2])
+df_f_fut <- data.frame(Population = df_fut[,1], Values = df_fut[,2])
+
+#add period
+df_f_pres$Period <- "Present"
+df_f_fut$Period <- "Future"
+
+
+#combine them
+df_GO <- rbind(df_f_fut,df_f_pres)
+df_GO$Period <- factor(df_GO$Period, levels = c("Present", "Future"))
+
+#plot
+
+trend_plot <- ggplot(df_GO, aes(x = Period, y = Values, group = Population)) +
+  geom_line(aes(color = Population)) +   # Line plot, connecting the points for each population
+  geom_point(aes(color = Population)) +  # Adding points for each value
+  theme_minimal() +
+  labs(title = paste0("Genomic offset GF trend across present and future ",set),
+       x = "Period",
+       y = "Genomic offset prediction") +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(size = 11),
+    plot.title = element_text(hjust = 0.5, color = "Black", face = "italic")
+    )
+    plot(trend_plot)
+#save
+    pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/RDA/figures/comparison/GO_pres_future/Scatterplot_comparison_trend_GO_present_future_",set,"_Taxus.pdf"));print(trend_plot);dev.off()
+}
+```
+
+```{r graph rmarkdown 3, echo=FALSE}
+list_set_rmarkdown <- c("LC")
+
+for(i in 1:length(list_set_rmarkdown)){
+  set <- list_set_rmarkdown[i]
+  period_1 <- c("present")
+  period_2 <- c("future")
+  df_pres <- get(paste0("genomic_offset_GF_",set,"_",period_1))
+  df_fut <- get(paste0("genomic_offset_GF_",set,"_",period_2))
+  #df
+df_f_pres <- data.frame(Population = df_pres[,1], Values = df_pres[,2])
+df_f_fut <- data.frame(Population = df_fut[,1], Values = df_fut[,2])
+#add period
+df_f_pres$Period <- "Present"
+df_f_fut$Period <- "Future"
+#combine them
+df_GO <- rbind(df_f_fut,df_f_pres)
+df_GO$Period <- factor(df_GO$Period, levels = c("Present", "Future"))
+#plot
+trend_plot <- ggplot(df_GO, aes(x = Period, y = Values, group = Population)) +
+  geom_line(aes(color = Population)) +   # Line plot, connecting the points for each population
+  geom_point(aes(color = Population)) +  # Adding points for each value
+  theme_minimal() +
+  labs(title = paste0("Genomic offset GF trend across present and future ",set),
+       x = "Period",
+       y = "Genomic offset prediction") +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(size = 11),
+    plot.title = element_text(hjust = 0.5, color = "Black", face = "italic")
+    )
+    plot(trend_plot)
+}
+```
+
+# Global conclusion
+
+We observed that the LC and MC sets are nearly identical; therefore, we will only perform further analyses the analyses on the LC set and not on the MC set.
+
+
+# Draft
+
+Example of GEA method 1 model: 
+```{r GEA using gradient forest MC, eval=FALSE, include=FALSE}
+
+#Run_GEA_GF_MC <- gradientForest(data.frame(past_climatic[,vars],genomic_matrix[outliers_set_final_overlapping_no_LD_new_var]), 
+#                             predictor.vars=vars, response.vars=colnames(genomic_matrix[outliers_set_final_overlapping_no_LD_new_var]),
+#                             corr.threshold=0.5, ntree=500, trace=T)
+
+#length(Run_GEA_GF_MC$result)
+
+#save(Run_GEA_GF_MC,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/GF/RUNs/Run_GEA_GF_MC.Rdata")
+#load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/GF/RUNs/Run_GEA_GF_MC.Rdata")
+```
