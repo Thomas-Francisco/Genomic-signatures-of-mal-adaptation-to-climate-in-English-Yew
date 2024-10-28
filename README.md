@@ -101,13 +101,13 @@ Local adaptation to climate have been investigated by first searching for isolat
 - GF GEA models
 - Genomic offset for present and future climate for several marker sets (all, random, random same allele frequencies, outlier LC, MC and CG)
 
+## Evaluation of the GEA models and the genomic offset predictions
+
 ### [14. Clonal bank genomic offset](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/Genomic_offset_Clonal_bank.html)
 
 RDA and GF genomic offsets for the clonal bank populations
 
-## Evaluation of the GEA models and the genomic offset predictions
 
-soon
 
 # Sources
 
