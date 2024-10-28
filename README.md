@@ -113,7 +113,13 @@ Local adaptation to climate have been investigated by first searching for isolat
 
 RDA and GF genomic offsets for the clonal bank populations
 
+### [15. Association fitness proxies ~ genomic offset predictions](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/Relationship_fitness_genomic_offset.html)
 
+- Composite fitness index
+- Relationship fitness ~ genomic offset using:
+    - Pearson correlation
+    - Linear models (Inferential and Bayesian)
+    - Quadratic models (Inferential and Bayesian)
 
 # Sources
 
