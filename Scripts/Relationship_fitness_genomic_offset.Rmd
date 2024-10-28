@@ -131,6 +131,32 @@ df_leafthickness_final <- df_leafthickness %>%
   filter(!(Population %in% c("ACEBEDO", "ALCOY", "LASENIA","	QUESADA")))
 ```
 
+## Correlation phenotypic traits
+
+We investigated the correlation of the phenotypic traits of populations: 
+
+```{r correlation matrix data}
+
+colnames(df_growth_final) <- c("Population","Growth")
+colnames(df_growth_pheno_final) <- c("Population","Growth_pheno")
+colnames(df_repro_pheno_final) <- c("Population","Repro_pheno")
+colnames(df_leafthickness_final) <- c("Population","Leafthickness")
+
+merged_df <- df_growth_final %>%
+  full_join(df_growth_pheno_final, by = "Population") %>%
+  full_join(df_repro_pheno_final, by = "Population") %>%
+  full_join(df_leafthickness_final, by = "Population")
+```
+
+```{r correlation}
+correlation_phenotypic_traits <- cor(merged_df[,-1], use="pairwise.complete.obs")
+
+corrplot(correlation_phenotypic_traits, method = "number", addrect = 2, col = c("darkorange","darkred"), type = "lower", tl.col = "black", tl.cex = 0.6, number.cex = 0.6)
+```
+
+We can see that the phenotypic traits do not seem to be highly related, as the correlations are quite low. This can indicate that they are responding to different selective pressures? Trade-off? Also, does that mean that they provide complementary information about fitness? 
+
+
 ## Composite fitness index
 
 We also tried to integrate these different traits into a single index because fitness is multitraits especially for long-lived organisms such as trees. 
