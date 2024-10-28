@@ -28,7 +28,6 @@ Genomic and climatic data for the range-wide populations were formatted to perfo
 - STRUCTURE clustering analysis
 - Graphical representation 
 
-### Phenotypic data clonal bank
 ### [4. Phenotypic data clonal bank](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/Phenotypic_data_clonal_bank.html)
 
 - Phenotypic data distribution and sampling years
