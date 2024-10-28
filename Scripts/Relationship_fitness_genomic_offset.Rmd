@@ -1,0 +1,1202 @@
+---
+title: "Relationship_fitness_genomic_offset"
+author: "Thomas Francisco"
+date: "2024-09-18"
+output:
+  html_document:
+    number_sections: true #titles
+    toc: true #table of content
+    toc_float: true # enable the toc to be on the side of the text, always visible
+    collapsed: True #control if the toc label will only display top level titles
+    toc_depth: 3
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	message = FALSE,
+	warning = FALSE,
+	cache = FALSE
+)
+rm(list = ls())
+
+library(dplyr)
+library(ggplot2)
+library(ggcorrplot)
+library(brms)
+library(boot)
+library(corrplot)
+library(gridExtra)
+library(stringr)
+library(purrr)
+```
+
+# Introduction
+
+To evaluate the relevance of the genomic offset in providing insight into potential maladaptation to climate across studied Taxus baccata populations, we investigated the potential relationship between fitness proxies and genomic offset predictions using an independent dataset of populations not used to build the gene-climate models. Genomic offset values for each population were calculated as the Euclidean distance between the predicted optimal genomic compositions under the population's reference climate and the clonal bank's climate from the planting to the measurement dates. We used two methods to calculate the genomic offset:  
+- RDA method with 5 sets of SNPs  
+- Gradient forest with 5 sets of SNPs  
+      
+For the phenotypic data, we aimed to retain the most fitness-related traits. We selected four traits:
+- Growth: Shoot volume
+- Growth phenology: Spring elongation
+- Reproductive phenology: proportion of male open strobili
+- Ecophysiological: leaf thickness
+
+To search for an association between the phenotypic data and the genomic offset predictions, we used several analyses: 
+- Pearson correlation
+- linear model: inferential and Bayesian approaches
+- non linear model: inferential and Bayesian approaches
+      
+# Data
+
+```{r meta_data}
+meta_data <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Populations/Populations_common_garden.csv",h=T,sep=";",dec=",")
+```
+
+## BLUPs data 
+    
+First, we loaded the BLUPs phenotypic data at the population level. We only kept the BLUPs at the population level.   
+For growth, growth and reproductive phenology:
+```{r phenotypic data}
+#list_traits <-c("growth","growth_pheno","repro_pheno","leafthickness","LMA","StomDens","D13C")
+list_traits <-c("growth","growth_pheno","repro_pheno")
+
+#selection of the right coeff
+list_x <- c(2,2,2)
+list_y <- c(27,27,19)
+
+for(i in 1:length(list_traits)){
+  
+  trait <- list_traits[i]
+  X <- list_x[i]
+  Y <- list_y[i]
+  
+  data <- read.csv(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/Blups_mean/Blups_",trait,"_period.csv"),h=T,sep=";",dec=",")
+
+  data_pop <- data[X:Y,] #keep only the Blup at the population level 
+  colnames(data_pop) <- c("Population","Blups")
+  data_pop$Population <- str_remove(data_pop$Population, "Population\\.")
+  
+  assign(paste0("df_",trait),data_pop)
+}
+```
+
+For leaf thickness:
+```{r phenotypic leaf traits}
+list_traits <-c("leafthickness")#"growth_bis","StomDens","LMA"
+
+#selection of the right coeff
+list_x <- c(2,2,2,2)
+list_y <- c(27,27,27,27)
+
+for(i in 1:length(list_traits)){
+  
+  trait <- list_traits[i]
+  X <- list_x[i]
+  Y <- list_y[i]
+  
+  data <- read.csv(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/Blups_mean/Blups_",trait,"final_period.csv"),h=T,sep=";",dec=",")
+
+  data_pop <- data[X:Y,] #keep only the Blup at the population level 
+  colnames(data_pop) <- c("Population","Blups")
+  data_pop$Population <- str_remove(data_pop$Population, "Population\\.")
+  
+  assign(paste0("df_",trait),data_pop)
+}
+```
+
+We removed the populations with too few individuals measured
+```{r removing the populations with to few individuals}
+#Shootvol
+#We remove the ACEBDO, LASENIA pop
+df_growth_final <- df_growth %>%
+  filter(!(Population %in% c("ACEBEDO", "LASENIA")))
+
+#springelong
+#We remove the ACEBEDO, ALCOY, LASENIA and QUESADA pop
+
+df_growth_pheno_final <- df_growth_pheno %>%
+  filter(!(Population %in% c("ACEBEDO", "ALCOY", "LASENIA","QUESADA")))
+
+#totalstrobopen
+#We remove the BOCA, JERTE, LASENIA, PUBLA and RASQUERA
+df_repro_pheno_final <- df_repro_pheno %>%
+  filter(!(Population %in% c("BOCAHUERGANO", "JERTE", "LASENIA","	PUEBLALILLO","RASQUERA")))
+
+#leaves traits
+#remove ACEBEDO, ALCOY, LASENIA and QUESADA
+##leafthickness
+df_leafthickness_final <- df_leafthickness %>%
+  filter(!(Population %in% c("ACEBEDO", "ALCOY", "LASENIA","	QUESADA")))
+```
+
+## Composite fitness index
+
+We also tried to integrate these different traits into a single index because fitness is multitraits especially for long-lived organisms such as trees. 
+The idea is to organize the populations based on their trait values and what seems to be adaptive in the common garden. For example, high growth is advantageous, so the population with the highest growth among the 26 populations will have the highest value. These values will be scaled to give equal weight to each trait, as we do not have the same number of populations per trait (using rank values would give more weight to traits with more populations).
+To standardize the values, we are applying the formula:   
+                              Standardized trait= (trait - min_value_trait)/(max_value_trait - min_value_trait)
+                              
+```{r standardized values}
+list_traits <- c("growth","growth_pheno","repro_pheno","leafthickness")
+
+for(x in 1: length(list_traits)){
+  
+  trait <- list_traits[x]
+  df <- get(paste0("df_", trait,"_final"))
+  
+  df_standardized <- df %>%
+  mutate(
+    trait_scaled = (df[,2] - min(df[,2])) / (max(df[,2]) - min(df[,2])))
+  
+  colnames(df_standardized) <- c("Population","Blups",paste0(trait,"_standardized"))
+  
+  assign(paste0("df_standardized_", trait), df_standardized)
+}
+```
+
+```{r standardize df}
+final_tot_standardized_traits <- reduce(list(df_standardized_growth[,-2], df_standardized_growth_pheno[,-2], df_standardized_repro_pheno[,-2], df_standardized_leafthickness[,-2]), full_join, by = "Population")
+```
+
+```{r composite fitness calculation}
+Trait_calculation <- final_tot_standardized_traits %>%
+  rowwise() %>%
+  mutate(
+    # Calculate the sum of standardized traits, ignoring NAs
+    valid_traits_sum = sum(c_across(ends_with("_standardized")), na.rm = TRUE),
+    
+    # Count non-NA standardized traits
+    valid_traits_count = sum(!is.na(c_across(ends_with("_standardized")))),
+    
+    # Calculate the trait index only if there is at least one valid trait
+    trait_index = if_else(valid_traits_count > 0, 
+                          valid_traits_sum / valid_traits_count, 
+                          NA_real_)
+  ) %>%
+  dplyr::select(-valid_traits_sum, -valid_traits_count) %>%  # Optionally remove helper columns
+  ungroup()
+
+# View the combined data frame with trait index
+print(Trait_calculation)
+
+df_composite_fitness <- data.frame(Population=Trait_calculation[,1],Fitness_index=Trait_calculation$trait_index)
+```
+
+## GO predictions
+    
+We loaded the genomic offset predictions for the 2 genomic offset methods: 
+```{r Load GO predictions}
+#RDA standard GO
+list_RDA_standard <- c("all","random","random_same_AF","LC","CG")
+list_period <- c("CG2012","CG2021")
+for(i in 1: length(list_period)){
+  
+    period <- list_period[i]
+
+for(x in 1:length(list_RDA_standard)){
+  name <- list_RDA_standard[x]
+
+  
+  load(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/standard_GO/RDA/data/CG_period/GO_RDA_",name,"_",period,"_Taxus.Rdata"))
+  }
+}
+
+#GF GO
+list_GF_standard <- c("all","random","random_same_AF","LC","CG")
+list_period <- c("2012","2021")
+for(i in 1: length(list_period)){
+  
+   period <- list_period[i]
+  
+for(x in 1:length(list_GF_standard)){
+  
+  name <- list_GF_standard[x]
+
+  
+  load(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/Standard_GO/GF/data/CG_period/GO_standard_GF_",name,"_",period,".Rdata"))
+}
+}
+```
+
+We can investigate the correlation between the predictions across methods and models: 
+```{r correlation GO predictions}
+df_GO <- data.frame(RDA_all=GO_RDA_all_CG2012_Taxus$GO_all_CG2012,RDA_ran=GO_RDA_random_CG2012_Taxus$GO_random_CG2012,RDA_rand_AF=GO_RDA_random_same_AF_CG2012_Taxus$GO_random_same_AF_CG2012,RDA_LC=GO_RDA_LC_CG2012_Taxus$GO_LC_CG2012,RDA_CG=GO_RDA_CG_CG2012_Taxus$GO_CG_CG2012,GF_ran=GO_standard_GF_random_2012$genomic_offset_GF_random,GF_ran_AF=GO_standard_GF_random_same_AF_2012$genomic_offset_GF_random_same_AF,GF_LC=GO_standard_GF_LC_2012$genomic_offset_GF_LC,GF_CG=GO_standard_GF_CG_2012$genomic_offset_GF_CG)
+
+df <- cor(df_GO)
+ggcorrplot(df, hc.order = F, type = "lower", lab = TRUE, title = "Correlation Matrix between Genomic Offsets across models")
+```
+
+```{r save corrplot GO, include=FALSE}
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models/correlation/correlation_GO_predictions_taxus.pdf");ggcorrplot(df, hc.order = F, type = "lower", lab = TRUE, title = "Correlation Matrix between Genomic Offsets across models");dev.off()
+```
+
+# Relationship fitness ~ genomic offset
+
+## Pearson correlations
+        
+First, we can investigate whether there is a correlation between fitness values and genomic offset (GO) predictions.
+```{r Pearson correlation}
+# List of RDA genomic offsets for 2012 and 2021
+list_GO_2012_RDA <- c("GO_RDA_all_CG2012_Taxus","GO_RDA_random_CG2012_Taxus", "GO_RDA_random_same_AF_CG2012_Taxus", 
+                      "GO_RDA_LC_CG2012_Taxus")
+list_GO_2021_RDA <- c("GO_RDA_all_CG2021_Taxus","GO_RDA_random_CG2021_Taxus", "GO_RDA_random_same_AF_CG2021_Taxus", 
+                      "GO_RDA_LC_CG2021_Taxus")
+
+# List of Gradient Forest genomic offsets for 2012 and 2021
+list_GO_2012_GF <- c("GO_standard_GF_all_2012","GO_standard_GF_random_2012", "GO_standard_GF_random_same_AF_2012", 
+                     "GO_standard_GF_LC_2012")
+list_GO_2021_GF <- c("GO_standard_GF_all_2021","GO_standard_GF_random_2021", "GO_standard_GF_random_same_AF_2021", 
+                     "GO_standard_GF_LC_2021")
+
+# Combine lists into one for easier processing
+list_GO_2012 <- c(list_GO_2012_RDA, list_GO_2012_GF)
+list_GO_2021 <- c(list_GO_2021_RDA, list_GO_2021_GF)
+
+# Corresponding methods and models
+list_method <- c(rep("RDA", 4), rep("GF", 4))  # 4 RDA models and 4 GF models
+
+list_model <- c("all","random", "random_same_AF", "LC", "all","random", "random_same_AF", "LC")
+list_model <- c("all","random", "random_same_AF", "outlier", "all","random", "random_same_AF", "outlier")
+
+# Traits considered
+#list_traits <- c("growth","growth_pheno","repro_pheno","leafthickness","LMA","StomDens","D13C")
+list_traits <- c("growth","growth_pheno","repro_pheno","leafthickness","composite_fitness")
+
+# Create an empty dataframe to store correlations
+correlation_df <- data.frame(
+  Method = character(),
+  Model = character(),
+  Trait = character(),
+  Correlation = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Loop over each Genomic Offset for both RDA and GF models
+for(i in 1:8) {  # Now we have 8 models (4 RDA + 4 GF)
+  GO_pred_2012 <- get(list_GO_2012[i])
+  GO_pred_2021 <- get(list_GO_2021[i])
+  method <- list_method[i]
+  model <- list_model[i]
+  
+  # Loop over each trait
+  for(x in 1:length(list_traits)) {
+    trait <- list_traits[x]
+    
+    # Use CG2021 data for Height, and CG2012 for other traits
+    if (trait == "Leafthickness" || trait=="Composite_fitness") {
+      df_trait <- get(paste0("df_", trait))
+      
+      # Merge data frames based on population for CG2021
+      merged_df <- merge(df_trait, GO_pred_2021, by = "Population", suffixes = c(".trait", ".GO"))
+    } else {
+      df_trait <- get(paste0("df_", trait))
+      
+      # Merge data frames based on population for CG2012
+      merged_df <- merge(df_trait, GO_pred_2012, by = "Population", suffixes = c(".trait", ".GO"))
+    }
+    
+    # Calculate the correlation
+    correlation <- cor(merged_df[, 2], merged_df[, 3])
+    
+    # Store the correlation in the dataframe
+    correlation_df <- rbind(correlation_df, data.frame(Method = method, Model = model, Trait = trait, Correlation = correlation))
+  }
+}
+# Print the correlation data frame
+#print(correlation_df)
+```
+
+
+Corrplot phenotypic traits, genomic offset
+```{r corrplot predicted GO}
+# Reshape the data for corrplot if necessary
+cor_matrix <- reshape(correlation_df, 
+                      timevar = "Trait", 
+                      idvar = c("Method", "Model"), 
+                      direction = "wide")
+
+# Set rownames based on a combination of 'Method' and 'Model'
+rownames(cor_matrix) <- paste(cor_matrix$Method, cor_matrix$Model, sep = "_")
+
+# Remove the 'Method' and 'Model' columns since they are now in the rownames
+cor_matrix <- cor_matrix[ , !(names(cor_matrix) %in% c("Method", "Model"))]
+
+colnames(cor_matrix) <- list_traits
+
+# create a correlation plot
+cor_matrix_fitness_index <- t(cor_matrix)#to have the traits on the abscissa
+ggcorrplot(cor_matrix_fitness_index, hc.order = F, type = "full", lab = TRUE, title = "Correlation Matrix between Traits
+           and Genomic Offsets")
+```
+
+```{r save corrplot associations, include=FALSE}
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/correlation/correlation_fitness_index.pdf");ggcorrplot(cor_matrix_fitness_index, hc.order = F, type = "full", lab = TRUE, title = "Correlation Matrix between Traits and Genomic Offsets");dev.off()
+```
+
+
+**We can see that correlations are negatives for almost all the methods and models for each trait. This aligns with what is expected to be advantageous in the climate of the common garden. Indeed, higher growth appears to be beneficial, as does late phenology, since the common garden is situated in a mountainous climate that is sensitive to late frost events. Additionally, the annual amount of precipitation is relatively low compared to the climate of the populations, suggesting that drought tolerance traits, such as high leaf thickness, could also be advantageous.**  
+**Depending on the traits, the strength of the correlation varies across models, indicating that no single model seems to perform significantly better than the others. Regarding the traits, the composite index appears to be more closely associated with genomic offset, suggesting that this index could serve as a better fitness proxy, assuming that genomic offset is indeed negatively correlated with fitness.** 
+        
+## Linear models
+        
+To further investigate, we built linear models to explore and test for relationships between fitness and genomic offset. We employed two types of models: inferential models and Bayesian models, as Bayesian approaches are known to perform better with small sample sizes.
+
+### Inferential model
+
+```{r inferential linear models, echo=T, eval=F}
+list_GO_2012_RDA <- c("GO_RDA_all_CG2012_Taxus","GO_RDA_random_CG2012_Taxus", "GO_RDA_random_same_AF_CG2012_Taxus", 
+                      "GO_RDA_LC_CG2012_Taxus")
+list_GO_2021_RDA <- c("GO_RDA_all_CG2021_Taxus","GO_RDA_random_CG2021_Taxus", "GO_RDA_random_same_AF_CG2021_Taxus", 
+                      "GO_RDA_LC_CG2021_Taxus")
+
+# List of Gradient Forest genomic offsets for 2012 and 2021
+list_GO_2012_GF <- c("GO_standard_GF_all_2012","GO_standard_GF_random_2012", "GO_standard_GF_random_same_AF_2012", 
+                     "GO_standard_GF_LC_2012")
+list_GO_2021_GF <- c("GO_standard_GF_all_2021","GO_standard_GF_random_2021", "GO_standard_GF_random_same_AF_2021", 
+                     "GO_standard_GF_LC_2021")
+
+# Combine lists into one for easier processing
+list_GO_2012 <- c(list_GO_2012_RDA, list_GO_2012_GF)
+list_GO_2021 <- c(list_GO_2021_RDA, list_GO_2021_GF)
+
+# Corresponding methods and models
+list_method <- c(rep("RDA", 4), rep("GF", 4))  # 4 RDA models and 4 GF models
+
+list_model <- c("all","random", "random_same_AF", "LC", "all","random", "random_same_AF", "LC")
+
+# Traits considered
+list_traits <- c("growth","growth_pheno","repro_pheno","leafthickness","composite_fitness")
+
+# Create an empty dataframe to store correlations
+lm_inf_df <- data.frame(
+  Method = character(),
+  Model = character(),
+  Trait = character(),
+  R2 = numeric(),
+  Coeff = numeric(),
+  Pvalue = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Loop over each Genomic Offset for both RDA and GF models
+for(i in 1:8) {  # Now we have 8 models (4 RDA + 4 GF)
+  GO_pred_2012 <- get(list_GO_2012[i])
+  GO_pred_2021 <- get(list_GO_2021[i])
+  method <- list_method[i]
+  model <- list_model[i]
+  
+  # Loop over each trait
+  for(x in 1:length(list_traits)) {
+    trait <- list_traits[x]
+    
+    # Use CG2021 data for Height, and CG2012 for other traits
+    if (trait == "leafthickness" || trait== "composite_fitness") {
+      df_trait <- get(paste0("df_", trait))
+      
+      # Merge data frames based on population for CG2021
+      merged_df <- merge(df_trait, GO_pred_2021, by = "Population", suffixes = c(".trait", ".GO"))
+    } else {
+      df_trait <- get(paste0("df_", trait))
+      
+      # Merge data frames based on population for CG2012
+      merged_df <- merge(df_trait, GO_pred_2012, by = "Population", suffixes = c(".trait", ".GO"))
+    }
+    
+    #linear model
+    lm_model <- lm(merged_df[, 2] ~ merged_df[, 3])
+    
+    #assumptions: 
+    pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Linear_models/Inferential/plot_model/",method,"/",model,"/diagnostic_plots/",method,"_",model,"_",trait,"_diagnostics.pdf"))
+    
+    # Plot all four diagnostic plots at once in a 2x2 grid
+    par(mfrow = c(2, 2))
+    plot(lm_model)
+    dev.off()
+    
+    # Reset plot settings
+    par(mfrow = c(1, 1))
+    
+    coeff <- data.frame(coef(lm_model))[2,1]
+    result_model <- data.frame(anova(lm_model))
+    r_squared <- summary(lm_model)$r.squared
+    pvalues <- result_model[1,5]
+    
+    # Store the correlation in the dataframe
+    lm_inf_df <- rbind(lm_inf_df, data.frame(Method=method,Model = model, Trait = trait,R2=round(r_squared,3),Coeff = round(coeff,3),Pvalue=round(pvalues,3)))
+    
+    # Create the data frame for plotting
+    plot_data <- data.frame(
+      GO_values = merged_df[, 3],
+      Blup = merged_df[, 2],
+      fitted = lm_model$fitted.values
+    )
+    
+    # Generate the ggplot
+    p <- ggplot(plot_data, aes(x = GO_values, y = Blup)) +
+      geom_point(color = "blue") +
+      geom_smooth(method = "lm", se = TRUE, level = 0.95, color = "lightgrey", alpha = 0.2) +  # Add confidence interval bands
+      geom_line(aes(y = fitted), color = "red") +
+      labs(title = paste("Linear Model:", trait, "~", method, model),
+           x = paste0("Genomic offset ",method," ",model),
+           y = paste0("proxy fitness ",trait)) +
+      theme_minimal()
+    
+    # Print the plot (or use ggsave() to save each plot to a file)
+    #print(p)
+    
+    pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Linear_models/Inferential/plot_model/",method,"/",model,"/plot_lm_",method,"_",model,"_",trait,"_Taxus.pdf"));print(p);dev.off()
+  }
+}
+
+# Print the correlation data frame
+print(lm_inf_df)
+```
+
+```{r linear relationship example rmarkdown, echo=FALSE}
+merged_df <- merge(df_composite_fitness, GO_standard_GF_random_same_AF_2021, by = "Population", suffixes = c(".trait", ".GO"))
+
+lm_model <- lm(merged_df[, 2] ~ merged_df[, 3])
+
+summary(lm_model)
+coeff <- data.frame(coef(lm_model))[2,1]
+    result_model <- data.frame(anova(lm_model))
+    r_squared <- summary(lm_model)$r.squared
+    pvalues <- result_model[1,5]
+    
+
+plot_data <- data.frame(
+      GO_values = merged_df[, 3],
+      Blup = merged_df[, 2],
+      fitted = lm_model$fitted.values
+    )
+    
+    # Generate the ggplot
+    p <- ggplot(plot_data, aes(x = GO_values, y = Blup)) +
+      geom_point(color = "#FF1493") +
+      geom_smooth(method = "lm", se = TRUE, level = 0.95, color = "lightgrey", alpha = 0.2) +  # Add confidence interval bands
+      geom_line(aes(y = fitted), color = "blue") +
+      labs(title = "Composite fitness = 0.6211 - 8.169xGO + E   R²= 0.25, P-value= 0.014",
+           x = "Genomic offset ",
+           y = "Composite fitness") +
+      theme_minimal()+
+      theme_bw(base_size = 11) +
+  theme(legend.position="right", panel.grid = element_line(), strip.text = element_text(size=11),plot.title = element_text(hjust = 0.5,color = "Black",face="italic"))
+    
+    plot(p)
+    
+#pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Linear_models/Inferential/plot_model/Retained_model/totalstrob_RDA_random_AF_linear_plot.pdf");print(p);dev.off()
+```
+
+```{r save lm inf model, include=FALSE}
+#lm_inf_df_GO_taxus<- lm_inf_df
+#save(lm_inf_df_GO_taxus,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Linear_models/Inferential/table/lm_inf_df_GO_taxus.Rdata")
+
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Linear_models/Inferential/table/lm_inf_df_GO_taxus.Rdata")
+#save table
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Linear_models/Inferential/table/table_bis.pdf", height=16, width=11.5)
+grid.table(lm_inf_df_GO_taxus)
+ttheme_default(base_size = 12)
+dev.off()
+```
+
+We observed that for some traits and models, there is a linear negative relationship. For example, for the composite index and the genomic offset derived from the Gradient Forest (GF) model, using the random set with the same allele frequencies, we found a distinct negative relationship. However, the size of our dataset could be a limitation.
+
+### Bayesian model
+      
+Based on the observations from the inferential linear model, we also applied a Bayesian linear model. Indeed, the Bayesian framework is generally more effective at handling smaller datasets compared to frequentist approaches. 
+```{r linear bayesian model, echo=T, eval=F}
+list_GO_2012_RDA <- c("GO_RDA_all_CG2012_Taxus","GO_RDA_random_CG2012_Taxus", "GO_RDA_random_same_AF_CG2012_Taxus", 
+                      "GO_RDA_LC_CG2012_Taxus")#, "GO_RDA_CG_CG2012_Taxus"
+list_GO_2021_RDA <- c("GO_RDA_all_CG2021_Taxus","GO_RDA_random_CG2021_Taxus", "GO_RDA_random_same_AF_CG2021_Taxus", 
+                      "GO_RDA_LC_CG2021_Taxus")#, "GO_RDA_CG_CG2021_Taxus"
+
+# List of Gradient Forest genomic offsets for 2012 and 2021
+list_GO_2012_GF <- c("GO_standard_GF_all_2012","GO_standard_GF_random_2012", "GO_standard_GF_random_same_AF_2012", 
+                     "GO_standard_GF_LC_2012")#, "GO_standard_GF_CG_2012"
+list_GO_2021_GF <- c("GO_standard_GF_all_2021","GO_standard_GF_random_2021", "GO_standard_GF_random_same_AF_2021", 
+                     "GO_standard_GF_LC_2021")#, "GO_standard_GF_CG_2021"
+
+# Combine lists into one for easier processing
+list_GO_2012 <- c(list_GO_2012_RDA, list_GO_2012_GF)
+list_GO_2021 <- c(list_GO_2021_RDA, list_GO_2021_GF)
+
+# Corresponding methods and models
+list_method <- c(rep("RDA", 4), rep("GF", 4))  # 5 RDA models and 5 GF models
+
+list_model <- c("all","random", "random_same_AF", "LC", "all","random", "random_same_AF", "LC")#"CG","CG"
+
+# Traits considered
+list_traits <- c("growth","growth_pheno","repro_pheno","leafthickness","composite_fitness")
+
+# Create an empty dataframe to store correlations
+
+lm_bayesian_df <- data.frame(
+  Method = character(),
+  Model = character(),
+  Trait = character(),
+  R2_model =numeric(),
+  R2_CI=numeric(),
+  b = numeric(),
+  b_CI = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Loop over each Genomic Offset for both RDA and GF models
+for(i in 1:8) {  # Now we have 8 models (4 RDA + 4 GF)
+  GO_pred_2012 <- get(list_GO_2012[i])
+  GO_pred_2021 <- get(list_GO_2021[i])
+  method <- list_method[i]
+  model <- list_model[i]
+  
+  # Loop over each trait
+  for(x in 1:length(list_traits)) {
+    trait <- list_traits[x]
+    
+    # Use CG2021 data for Height, and CG2012 for other traits
+    if (trait == "leafthickness" || trait== "composite_fitness" ) {
+      df_trait <- get(paste0("df_", trait))
+      
+      # Merge data frames based on population for CG2021
+      merged_df <- merge(df_trait, GO_pred_2021, by = "Population", suffixes = c(".trait", ".GO"))
+    } else {
+      df_trait <- get(paste0("df_", trait))
+      
+      # Merge data frames based on population for CG2012
+      merged_df <- merge(df_trait, GO_pred_2012, by = "Population", suffixes = c(".trait", ".GO"))
+    }
+
+  y_data <- merged_df[,2]
+  x_data <- merged_df[,3]
+   
+df_nl_model <- data.frame(y=y_data,x=x_data)
+prior1 <- prior(normal(0, 10), "b1")
+
+fit1 <- brm(
+  formula = bf(y ~ x),                  # Formula for the model
+  family = gaussian(),                        # Specify Gaussian family
+  data = df_nl_model,                         # Data
+  prior = prior(normal(0, 10), class = "b",coef = "x"),  # Prior on coefficients (b)
+  iter = 1500000,                                # Number of iterations
+  warmup = 50000,                                # Warmup iterations
+  thin = 500,                                   # Thinning
+  cores = 16                                  # Number of cores for parallel computation
+)
+
+#save the model: 
+assign(paste0("lm_bayesian_",method,"_",model,"_",trait),fit1)
+save(list = paste0("lm_bayesian_",method,"_",model,"_",trait),file=paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Linear_models/Bayesian/models/",method,"/lm_bayesian_",method,"_",model,"_",trait,".Rdata"))
+
+#load(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models/Linear_models/Bayesian/models/",method,"/lm_bayesian_",method,"_",model,"_",trait,".Rdata"))
+
+fit1 <- get(paste0("lm_bayesian_",method,"_",model,"_",trait))
+#coeff
+fit1_summary <- summary(fit1)
+
+# Extract the estimates for b1 and b2
+coef_b <- fit1_summary$fixed["x", "Estimate"]
+
+b_ci_lower <- fit1_summary$fixed["x", "l-95% CI"]
+b_ci_upper <- fit1_summary$fixed["x", "u-95% CI"]
+
+R2_model <- bayes_R2(fit1)["R2","Estimate"]
+
+R2_ci_lower <- bayes_R2(fit1)["R2", "Q2.5"]
+R2_ci_upper <- bayes_R2(fit1)["R2", "Q97.5"]
+
+# Store the correlation in the dataframe
+    lm_bayesian_df <- rbind(lm_bayesian_df, data.frame(Method=method,Model = model, Trait = trait, R2_model = round(R2_model,3),R2_CI=paste0(round(R2_ci_lower,3),"_",round(R2_ci_upper,3)),b = round(coef_b,3), b_CI = paste0(round(b_ci_lower,3),"_",round(b_ci_upper,3))))
+
+#MCMC chains
+plot(fit1)
+
+pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Linear_models/Bayesian/figures/",method,"/",model,"/eval_model",trait,"_GO_",method,"_",model,"_Taxus.pdf"));plot(fit1);dev.off()
+
+#posterior distrib
+pp_check(fit1)
+
+pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Linear_models/Bayesian/figures/",method,"/",model,"/post_distrib",trait,"_GO_",method,"_",model,"_Taxus.pdf"));plot(pp_check(fit1));dev.off()
+
+plot(conditional_effects(fit1), points = TRUE)
+    
+    pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Linear_models/Bayesian/figures/",method,"/",model,"/lm_plot",trait,"_GO_",method,"_",model,"_Taxus.pdf"));plot(conditional_effects(fit1), points = TRUE);dev.off()
+  }
+}
+# Print the correlation data frame
+print(lm_bayesian_df)
+```
+
+
+```{r save lm bayesian model, include=FALSE}
+#lm_Bayesian_df_GO_taxus<- lm_bayesian_df
+#save(lm_inf_df_GO_taxus,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Linear_models/Bayesian/table/lm_Bayesian_df_GO_taxus.Rdata")
+
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Linear_models/Bayesian/table/lm_Bayesian_df_GO_taxus.Rdata")
+#save to table
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Linear_models/Bayesian/table/table_models.pdf", height=16, width=11.5)
+grid.table(lm_inf_df_GO_taxus)
+ttheme_default(base_size = 18)
+dev.off()
+```
+
+We found similar results with the Bayesian approach. Overall, the best associations align with the findings from the Pearson correlation: both the RDA and GF models appear to be negatively associated with all the traits, with the strength of the association varying depending on the model and the trait. Furthermore, the composite index seems to be more strongly negatively associated with genomic offset compared to other traits.
+
+        
+## Non linear models
+        
+Due to the complexity of the relationship between the traits and the genomic offset predictions, we may not expect a linear relationship. To test this, we calculated non-linear models with quadratic parameters to capture any potential non-linear responses. We employed both inferential and Bayesian approaches for this analysis.
+
+### Inferential model
+
+We performed the model using the **nls** function from **stats** package: 
+```{r non-linear frequentist model, echo=T, eval=F}
+list_GO_2012_RDA <- c("GO_RDA_all_CG2012_Taxus","GO_RDA_random_CG2012_Taxus", "GO_RDA_random_same_AF_CG2012_Taxus", 
+                      "GO_RDA_LC_CG2012_Taxus")#, "GO_RDA_CG_CG2012_Taxus"
+list_GO_2021_RDA <- c("GO_RDA_all_CG2021_Taxus","GO_RDA_random_CG2021_Taxus", "GO_RDA_random_same_AF_CG2021_Taxus", 
+                      "GO_RDA_LC_CG2021_Taxus")#, "GO_RDA_CG_CG2021_Taxus"
+
+# List of Gradient Forest genomic offsets for 2012 and 2021
+list_GO_2012_GF <- c("GO_standard_GF_all_2012","GO_standard_GF_random_2012", "GO_standard_GF_random_same_AF_2012", 
+                     "GO_standard_GF_LC_2012")#, "GO_standard_GF_CG_2012"
+list_GO_2021_GF <- c("GO_standard_GF_all_2021","GO_standard_GF_random_2021", "GO_standard_GF_random_same_AF_2021", 
+                     "GO_standard_GF_LC_2021")#, "GO_standard_GF_CG_2021"
+
+# Combine lists into one for easier processing
+list_GO_2012 <- c(list_GO_2012_RDA, list_GO_2012_GF)
+list_GO_2021 <- c(list_GO_2021_RDA, list_GO_2021_GF)
+
+# Corresponding methods and models
+list_method <- c(rep("RDA", 4), rep("GF", 4))  # 4 RDA models and 4 GF models
+
+list_model <- c("all","random", "random_same_AF", "LC", "all","random", "random_same_AF", "LC")#, "CG", "CG"
+
+# Traits considered
+list_traits <- c("growth","growth_pheno","repro_pheno","leafthickness","composite_fitness")
+
+# Create an empty dataframe to store correlations
+nl_infer_df_taxus <- data.frame(
+  Method = character(),
+  Model = character(),
+  Trait = character(),
+  R2_model = numeric(),
+  coef_b1 = numeric(),
+  b1_Pvalue = numeric(),
+  coef_b2 = numeric(),
+  b2_Pvalue = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Loop over each Genomic Offset for both RDA and GF models
+for(i in 1:8) {  # Now we have 8 models (4 RDA + 4 GF)
+  GO_pred_2012 <- get(list_GO_2012[i])
+  GO_pred_2021 <- get(list_GO_2021[i])
+  method <- list_method[i]
+  model <- list_model[i]
+  
+  # Loop over each trait
+ for(x in 1:length(list_traits)) {
+    trait <- list_traits[x]
+    
+    # Use CG2021 data for Height, and CG2012 for other traits
+    if (trait == "leafthickness" || trait== "composite_fitness" ) {
+      df_trait <- get(paste0("df_", trait))
+      
+      # Merge data frames based on population for CG2021
+      merged_df <- merge(df_trait, GO_pred_2021, by = "Population", suffixes = c(".trait", ".GO"))
+    } else {
+      df_trait <- get(paste0("df_", trait))
+      
+      # Merge data frames based on population for CG2012
+      merged_df <- merge(df_trait, GO_pred_2012, by = "Population", suffixes = c(".trait", ".GO"))
+    }
+
+  y_data <- merged_df[,2]
+  x_data <- merged_df[,3]
+   
+df_nl_model <- data.frame(y=y_data,x=x_data)
+
+infer_model <- stats::nls(y ~ b0+b1*x+b2*(x^2),data=df_nl_model,
+                          start = list(b0=0.1,b1 = 0.1, b2 = .1),control = nls.control(minFactor = 1e-10, maxiter = 500))
+
+#save the model: 
+assign(paste0("nl_infer_quadra_",method,"_",model,"_",trait),infer_model)
+
+save(list = paste0("nl_infer_quadra_",method,"_",model,"_",trait),file=paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Non_linear/Inferential/models/",method,"/",model,"/nl_infer_quadra_",method,"_",model,"_",trait,".Rdata"))
+
+
+# Extract the estimates for b1 and b2
+
+coef_b1 <- data.frame(coef(infer_model)["b1"])
+coef_b2 <- data.frame(coef(infer_model)["b2"])
+R2_model <- modelr::rsquare(infer_model, df_nl_model)
+
+
+#pvalues
+model_summary <- summary(infer_model)
+p_values_b1 <- coef(model_summary)["b1", "Pr(>|t|)"]
+p_values_b2 <- coef(model_summary)["b2", "Pr(>|t|)"]
+
+
+nl_infer_df_taxus <- rbind(nl_infer_df_taxus, data.frame(
+      Method = method,
+      Model = model,
+      Trait = trait,
+      R2_model = round(R2_model,3),
+      coef_b1 = round(coef_b1[,1],3),
+      b1_Pvalue = round(p_values_b1,3),
+      coef_b2 = round(coef_b2[,1],3),
+      b2_Pvalue = round(p_values_b2,3)
+    ))
+
+#confidence interval for the plot: 
+
+ci <- confint(infer_model)
+print(ci)
+
+# Create new data for prediction over a range of x values
+new_data <- data.frame(x = seq(min(df_nl_model$x), max(df_nl_model$x), length.out = 100))
+
+# Get the predicted values for the new data
+new_data$y_pred <- predict(infer_model, newdata = new_data)
+
+# Bootstrapping to calculate confidence intervals for predictions
+# Define the prediction function for the bootstrapping
+predict_nls <- function(data, indices) {
+        tryCatch({
+          fit <- nls(y ~ b1*x + b2*(x^2), data = data[indices, ], start = list(b1 = 0.1, b2 = 0.1))
+          predict(fit, newdata = new_data)
+        }, error = function(e) {
+          rep(NA, nrow(new_data))  # Return NA if fitting fails
+        })
+      }
+
+boot_res <- boot::boot(
+        data = df_nl_model,    
+        statistic = predict_nls,  
+        R = 1000
+      )
+
+# Filter out NA values before calculating quantiles
+      valid_bootstrap <- boot_res$t[complete.cases(boot_res$t), ]
+      
+      # Calculate confidence intervals from bootstrapped predictions
+      ci_low <- apply(valid_bootstrap, 2, quantile, probs = 0.025, na.rm = TRUE)
+      ci_high <- apply(valid_bootstrap, 2, quantile, probs = 0.975, na.rm = TRUE)
+
+# Add confidence intervals to the data
+new_data$ci_low <- ci_low
+new_data$ci_high <- ci_high
+
+# Plotting the model with confidence intervals using ggplot2
+
+plot <- ggplot(df_nl_model, aes(x = x, y = y)) +
+  geom_point(color = "blue") +  # Observed data points
+  geom_line(data = new_data, aes(x = x, y = y_pred), color = "red") +  # Fitted curve
+  geom_ribbon(data = new_data, aes(y = x, ymin = ci_low, ymax = ci_high), alpha = 0.2, fill = "lightgrey") +  # Confidence interval band
+  labs(title = "Non-Linear Model with Confidence Intervals",
+       x = "x",
+       y = "y") +
+  theme_minimal()
+plot
+    
+    pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Non_linear/Inferential/figures/",method,"/",model,"/plot_nl_inf_quadra_",method,"_",model,"_",trait,"_Taxus.pdf"));plot(plot);dev.off()
+  }
+}
+# Print the correlation data frame
+print(lm_inf_df)
+```
+
+
+```{r non-linear relationship example rmarkdown, echo=FALSE}
+for(i in 1:1) {  # Now we have 8 models (4 RDA + 4 GF)
+  GO_pred_2012 <- get(list_GO_2012[i])
+  GO_pred_2021 <- get(list_GO_2021[i])
+  method <- list_method[i]
+  model <- list_model[i]
+  
+  list_traits <- c("composite_fitness")
+  # Loop over each trait
+ for(x in 1:length(list_traits)) {
+    trait <- list_traits[x]
+    
+    # Use CG2021 data for Height, and CG2012 for other traits
+    if (trait == "leafthickness" || trait== "composite_fitness" ) {
+      df_trait <- get(paste0("df_", trait))
+      
+      # Merge data frames based on population for CG2021
+      merged_df <- merge(df_trait, GO_pred_2021, by = "Population", suffixes = c(".trait", ".GO"))
+    } else {
+      df_trait <- get(paste0("df_", trait))
+      
+      # Merge data frames based on population for CG2012
+      merged_df <- merge(df_trait, GO_pred_2012, by = "Population", suffixes = c(".trait", ".GO"))
+    }
+
+  y_data <- merged_df[,2]
+  x_data <- merged_df[,3]
+   
+df_nl_model <- data.frame(y=y_data,x=x_data)
+
+infer_model <- stats::nls(y ~ b0+b1*x+b2*(x^2),data=df_nl_model,
+                          start = list(b0=0.1,b1 = 0.1, b2 = .1),control = nls.control(minFactor = 1e-10, maxiter = 500))
+
+# Extract the estimates for b1 and b2
+
+coef_b1 <- data.frame(coef(infer_model)["b1"])
+coef_b2 <- data.frame(coef(infer_model)["b2"])
+R2_model <- modelr::rsquare(infer_model, df_nl_model)
+
+
+#pvalues
+model_summary <- summary(infer_model)
+p_values_b1 <- coef(model_summary)["b1", "Pr(>|t|)"]
+p_values_b2 <- coef(model_summary)["b2", "Pr(>|t|)"]
+
+#confidence interval for the plot: 
+
+ci <- confint(infer_model)
+print(ci)
+
+# Create new data for prediction over a range of x values
+new_data <- data.frame(x = seq(min(df_nl_model$x), max(df_nl_model$x), length.out = 100))
+
+# Get the predicted values for the new data
+new_data$y_pred <- predict(infer_model, newdata = new_data)
+
+# Bootstrapping to calculate confidence intervals for predictions
+# Define the prediction function for the bootstrapping
+predict_nls <- function(data, indices) {
+        tryCatch({
+          fit <- nls(y ~ b1*x + b2*(x^2), data = data[indices, ], start = list(b1 = 0.1, b2 = 0.1))
+          predict(fit, newdata = new_data)
+        }, error = function(e) {
+          rep(NA, nrow(new_data))  # Return NA if fitting fails
+        })
+      }
+
+boot_res <- boot::boot(
+        data = df_nl_model,    
+        statistic = predict_nls,  
+        R = 1000
+      )
+
+# Filter out NA values before calculating quantiles
+      valid_bootstrap <- boot_res$t[complete.cases(boot_res$t), ]
+      
+      # Calculate confidence intervals from bootstrapped predictions
+      ci_low <- apply(valid_bootstrap, 2, quantile, probs = 0.025, na.rm = TRUE)
+      ci_high <- apply(valid_bootstrap, 2, quantile, probs = 0.975, na.rm = TRUE)
+
+# Add confidence intervals to the data
+      
+#new_data$ci_low <- ci_low
+#new_data$ci_high <- ci_high
+
+# Plotting the model with confidence intervals using ggplot2
+
+plot <- ggplot(df_nl_model, aes(x = x, y = y)) +
+  geom_point(color = "blue") +  # Observed data points
+  geom_line(data = new_data, aes(x = x, y = y_pred), color = "red") +  # Fitted curve
+  geom_ribbon(data = new_data, aes(y = x, ymin = ci_low, ymax = ci_high), alpha = 0.2, fill = "lightgrey") +  # Confidence interval band
+  labs(title = "Non-Linear Model with Confidence Intervals",
+       x = "x",
+       y = "y") +
+  theme_minimal()
+plot
+    # Generate the ggplot
+    p <- ggplot(df_nl_model, aes(x = x, y = y)) +
+      geom_point(color = "#FF1493") +
+      geom_line(data = new_data, aes(x = x, y = y_pred), color = "blue") +  # Fitted curve
+      geom_ribbon(data = new_data, aes(y = x, ymin = ci_low, ymax = ci_high), alpha = 0.2, fill = "lightgrey") +  # Confidence interval band
+  labs(title = "Non-Linear Model composite fitness ~ Genomic offset GF random same AF ",
+       x = "Genomic offset GF random same AF",
+       y = "composite fitness index") +
+  theme_minimal()+
+      theme_bw(base_size = 11) +
+  theme(legend.position="right", panel.grid = element_line(), strip.text = element_text(size=11),plot.title = element_text(hjust = 0.5,color = "Black",face="italic"))
+    
+    plot(p)
+ }
+}
+#pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Linear_models/Inferential/plot_model/Retained_model/totalstrob_RDA_random_AF_linear_plot.pdf");print(p);dev.off()
+```
+
+```{r save nl inf model standard GO, include=FALSE}
+#df_nl_quadra_inf_taxus<- nl_infer_df_taxus
+#save(df_nl_quadra_inf_taxus,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Non_linear/Inferential/table/df_nl_quadra_inf_taxus.Rdata")
+
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Non_linear/Inferential/table/df_nl_quadra_inf_taxus.Rdata")
+
+#save to table
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Non_linear/Inferential/table/table_models.pdf", height=16, width=11.5)
+grid.table(df_nl_quadra_inf_taxus)
+ttheme_default(base_size = 12)
+dev.off()
+```
+
+### Bayesian model
+```{r non-linear bayesian model, echo=T,eval=F}
+list_GO_2012_RDA <- c("GO_RDA_all_CG2012_Taxus","GO_RDA_random_CG2012_Taxus", "GO_RDA_random_same_AF_CG2012_Taxus", 
+                      "GO_RDA_LC_CG2012_Taxus")#, "GO_RDA_CG_CG2012_Taxus"
+list_GO_2021_RDA <- c("GO_RDA_all_CG2021_Taxus","GO_RDA_random_CG2021_Taxus", "GO_RDA_random_same_AF_CG2021_Taxus", 
+                      "GO_RDA_LC_CG2021_Taxus")#, "GO_RDA_CG_CG2021_Taxus"
+
+# List of Gradient Forest genomic offsets for 2012 and 2021
+list_GO_2012_GF <- c("GO_standard_GF_all_2012","GO_standard_GF_random_2012", "GO_standard_GF_random_same_AF_2012", 
+                     "GO_standard_GF_LC_2012")#, "GO_standard_GF_CG_2012"
+list_GO_2021_GF <- c("GO_standard_GF_all_2021","GO_standard_GF_random_2021", "GO_standard_GF_random_same_AF_2021", 
+                     "GO_standard_GF_LC_2021")#, "GO_standard_GF_CG_2021"
+
+# Combine lists into one for easier processing
+list_GO_2012 <- c(list_GO_2012_RDA, list_GO_2012_GF)
+list_GO_2021 <- c(list_GO_2021_RDA, list_GO_2021_GF)
+
+# Corresponding methods and models
+list_method <- c(rep("RDA", 4), rep("GF", 4))  # 4 RDA models and 4 GF models
+
+list_model <- c("all","random", "random_same_AF", "LC", "all","random", "random_same_AF", "LC")#, "CG", "CG"
+
+# Traits considered
+list_traits <- c("growth","growth_pheno","repro_pheno","leafthickness","composite_fitness")
+
+# Create an empty dataframe to store correlations
+
+df_nl_bayesian_taxus <- data.frame(
+  Method = character(),
+  Model = character(),    # To store RDA name
+  Trait = character(),  # To store trait name
+  R2_model =numeric(),
+  R2_ci_lower=numeric(),
+  R2_ci_upper=numeric(),
+  b1 = numeric(),       # To store b1 coefficient
+  b2 = numeric(),       # To store b2 coefficient
+  CI_b1 = numeric(),
+  CI_b2 = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Loop over each Genomic Offset for both RDA and GF models
+for(i in 1:8) {  # Now we have 8 models (4 RDA + 4 GF)
+  GO_pred_2012 <- get(list_GO_2012[i])
+  GO_pred_2021 <- get(list_GO_2021[i])
+  method <- list_method[i]
+  model <- list_model[i]
+  
+  # Loop over each trait
+ for(x in 1:length(list_traits)) {
+    trait <- list_traits[x]
+    
+    # Use CG2021 data for Height, and CG2012 for other traits
+    if (trait == "leafthickness" || trait== "composite_fitness" ) {
+      df_trait <- get(paste0("df_", trait))
+      
+      # Merge data frames based on population for CG2021
+      merged_df <- merge(df_trait, GO_pred_2021, by = "Population", suffixes = c(".trait", ".GO"))
+    } else {
+      df_trait <- get(paste0("df_", trait))
+      
+      # Merge data frames based on population for CG2012
+      merged_df <- merge(df_trait, GO_pred_2012, by = "Population", suffixes = c(".trait", ".GO"))
+    }
+
+  y_data <- merged_df[,2]
+  x_data <- merged_df[,3]
+   
+df_nl_model <- data.frame(y=y_data,x=x_data)
+prior1 <- prior(normal(0, 10), nlpar = "b0")+prior(normal(0, 10), nlpar = "b1")+ prior(normal(0, 10), nlpar = "b2")
+
+fit1 <- brm(bf(y ~ b0+b1*x+b2*(x^2), b0~1,b1 ~ 1,b2 ~ 1, nl = TRUE),
+            data = df_nl_model, prior = prior1, iter=1500000,warmup = 50000,thin=500, cores = 16)
+
+#save the model: 
+#assign(paste0("nl_bayesian_quadra_",method,"_",model,"_",trait),fit1)
+
+#save(list = paste0("nl_bayesian_quadra_",method,"_",model,"_",trait),file=paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Non_linear/Bayesian/models/",method,"/nl_bayesian_quadra_",method,"_",model,"_",trait,".Rdata"))
+
+load(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Non_linear/Bayesian/models/",method,"/nl_bayesian_quadra_",method,"_",model,"_",trait,".Rdata"))
+
+fit1 <- get(paste0("nl_bayesian_quadra_",method,"_",model,"_",trait))
+#coeff
+
+fit1_summary <- summary(fit1)
+
+# Extract the estimates for b1 and b2
+coef_b1 <- fit1_summary$fixed["b1_Intercept", "Estimate"]
+coef_b2 <- fit1_summary$fixed["b2_Intercept", "Estimate"]
+
+b1_ci_lower <- fit1_summary$fixed["b1_Intercept", "l-95% CI"]
+b1_ci_upper <- fit1_summary$fixed["b1_Intercept", "u-95% CI"]
+b2_ci_lower <- fit1_summary$fixed["b2_Intercept", "l-95% CI"]
+b2_ci_upper <- fit1_summary$fixed["b2_Intercept", "u-95% CI"]
+
+R2_model <- bayes_R2(fit1)["R2","Estimate"]
+
+R2_ci_lower <- bayes_R2(fit1)["R2", "Q2.5"]
+R2_ci_upper <- bayes_R2(fit1)["R2", "Q97.5"]
+
+
+
+df_nl_bayesian_taxus <- rbind(df_nl_bayesian_taxus, data.frame(
+      Method = method,
+      Model = model,
+      Trait = trait,
+      R2_model= round(R2_model,3),
+      R2_ci_lower=round(R2_ci_lower,3),
+      R2_ci_upper=round(R2_ci_upper,3),
+      b1 = round(coef_b1,3),
+      b2 = round(coef_b2,3),
+      CI_b1=paste0(round(b1_ci_lower,3),"_",round(b1_ci_upper,3)),
+      CI_b2=paste0(round(b2_ci_lower,3),"_",round(b2_ci_upper,3))
+    ))
+
+#MCMC chains
+plot(fit1)
+
+#pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Non_linear/Bayesian/figures/",method,"/",model,"/MCMC_nl_quadra_bayesian",trait,"_GO_",method,model,"_Taxus.pdf"));plot(fit1);dev.off()
+
+#posterior distrib
+pp_check(fit1)
+
+pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Non_linear/Bayesian/figures/",method,"/",model,"/post_distrib_nl_quadra_bayesian",trait,"_GO_",method,model,"_Taxus.pdf"));plot(pp_check(fit1));dev.off()
+
+
+plot(conditional_effects(fit1), points = TRUE)
+    
+pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Non_linear/Bayesian/figures/",method,"/",model,"/plot_nl_quadra_",trait,"_GO_",method,model,"_Taxus.pdf"));plot(conditional_effects(fit1), points = TRUE);dev.off()
+  }
+}
+
+# Print the correlation data frame
+print(df_nl_bayesian_taxus)
+```
+
+
+```{r save df result nl bayesian standard GO, include=FALSE}
+
+#df_nl_bayesian_model_standard_GO_taxus<- df_nl_bayesian_taxus
+#save(df_nl_bayesian_model_standard_GO_taxus,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Non_linear/Bayesian/table/df_nl_bayesian_model_standard_GO_taxus.Rdata")
+
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Non_linear/Bayesian/table/df_nl_bayesian_model_standard_GO_taxus.Rdata")
+
+#save to table
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Non_linear/Bayesian/table/table_models.pdf", height=16, width=11.5)
+grid.table(df_nl_bayesian_model_standard_GO_taxus)
+ttheme_default(base_size = 7)
+dev.off()
+```
+
+
+Overall, we can observe that the relationships appear quite linear, as adding a quadratic parameter did not significantly change the R2 of the models. This suggests that the relationships may indeed be linear; therefore, incorporating a quadratic coefficient did not substantially impact the results as long as a linear coefficient remained in the model. Moreover, Bayesian and inferential models converged for those models with the highest negative associations.
+**In conclusion, our dataset reveals a negative association between fitness proxies and genomic offset predictions. This suggests that genomic offset may provide valuable insights into the maladaptation of English Yew populations to climate conditions.**
+
+# Draft
+
+## other phenotypic traits
+
+```{r other phenotypic traits, eval=FALSE, include=FALSE}
+#Basal area
+#We remove the ACEBDO, LASENIA pop
+df_growth_bis_final <- df_growth_bis %>%
+  filter(!(Population %in% c("LASENIA")))
+
+##LMA
+df_LMA_final <- df_LMA %>%
+  filter(!(Population %in% c("ACEBEDO", "ALCOY", "LASENIA","	QUESADA")))
+
+##D13C
+df_StomDens_final <- df_StomDens %>%
+  filter(!(Population %in% c("ACEBEDO", "ALCOY", "LASENIA","	QUESADA")))
+
+##D13C
+df_D13C_final <- df_D13C %>%
+ filter(!(Population %in% c("ACEBEDO", "ALCOY", "LASENIA","	QUESADA")))
+```
+
+
+## output linear relationship poster
+
+```{r linear relationship poster, eval=FALSE, include=FALSE}
+merged_df <- merge(df_strobtot, GO_RDA_random_same_AF_CG2012_Taxus, by = "Population", suffixes = c(".trait", ".GO"))
+
+lm_model <- lm(merged_df[, 2] ~ merged_df[, 3])
+
+summary(lm_model)
+coeff <- data.frame(coef(lm_model))[2,1]
+    result_model <- data.frame(anova(lm_model))
+    r_squared <- summary(lm_model)$r.squared
+    pvalues <- result_model[1,5]
+    
+
+plot_data <- data.frame(
+      GO_values = merged_df[, 3],
+      Blup = merged_df[, 2],
+      fitted = lm_model$fitted.values
+    )
+    
+    # Generate the ggplot
+    p <- ggplot(plot_data, aes(x = GO_values, y = Blup)) +
+      geom_point(color = "#FF1493") +
+      geom_smooth(method = "lm", se = TRUE, level = 0.95, color = "lightgrey", alpha = 0.2) +  # Add confidence interval bands
+      geom_line(aes(y = fitted), color = "blue") +
+      labs(title = "Total number strobili = 0.01 - 0.12xGO + E",
+           x = "Genomic offset ",
+           y = "Total number strobili") +
+      theme_minimal()+
+      theme_bw(base_size = 11) +
+  theme(legend.position="right", panel.grid = element_line(), strip.text = element_text(size=11),plot.title = element_text(hjust = 0.5,color = "Black",face="italic"))
+    
+    plot(p)
+    
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Linear_models/Inferential/plot_model/Retained_model/totalstrob_RDA_random_AF_linear_plot.pdf");print(p);dev.off()
+```
+
+
+```{r coeff poster, eval=FALSE, include=FALSE}
+
+ merged_df <- merge(df_openstrob_final, GO_standard_GF_random_2012, by = "Population", suffixes = c(".trait", ".GO"))
+model <- lm(merged_df[,2]~merged_df[,3])
+
+summary(model)
+
+fitted = model$fitted.values
+    
+    # Generate the ggplot
+    p <- ggplot(merged_df, aes(x = merged_df[,3], y = merged_df[,2])) +
+      geom_point(color = "blue") +
+      geom_smooth(method = "lm", se = TRUE, level = 0.95, color = "lightgrey", alpha = 0.2) +  # Add confidence interval bands
+      geom_line(aes(y = fitted), color = "red") +
+      labs(title = paste("Linear Model:", trait, "~", method, model),
+           x = paste0("Genomic offset ",method," ",model),
+           y = paste0("proxy fitness ",trait)) +
+      theme_minimal()
+
+    p
+    
+ df_nl_model<- data.frame(y=merged_df$Blups,x=merged_df$genomic_offset_GF_random)
+    
+infer_model <- stats::nls(y ~ b0+b1*x+b2*(x^2),data=df_nl_model,
+                          start = list(b0=0.1,b1 = 0.1, b2 = .1),control = nls.control(minFactor = 1e-10, maxiter = 500))
+
+coef_b1 <- data.frame(coef(infer_model)["b1"])
+coef_b2 <- data.frame(coef(infer_model)["b2"])
+R2_model <- modelr::rsquare(infer_model, df_nl_model)
+
+
+#pvalues
+model_summary <- summary(infer_model)
+p_values_b1 <- coef(model_summary)["b1", "Pr(>|t|)"]
+p_values_b2 <- coef(model_summary)["b2", "Pr(>|t|)"]
+```
+
+## non-parametric tests 
+
+```{r non parametric test, eval=FALSE, include=FALSE}
+
+spearman_test <- cor.test(merged_df[,3], merged_df[,2], method = "spearman")
+
+
+kendall_test <- cor.test(merged_df[,3], merged_df[,2], method = "kendall")
+```
+
+
