@@ -1,0 +1,783 @@
+---
+title: "Phenotypic_data_clonal_bank"
+author: "Thomas Francisco"
+date: "2024-09-16"
+output:
+  html_document:
+    number_sections: true #titles
+    toc: true #table of content
+    toc_float: true # enable the toc to be on the side of the text, always visible
+    collapsed: True #control if the toc label will only display top level titles
+    toc_depth: 3
+---
+
+```{r library, message=FALSE, warning=FALSE, include=FALSE}
+knitr::opts_chunk$set(cache = FALSE)
+
+rm(list = ls()) 
+
+library(MCMCglmm)
+library(lme4)
+library(coda)
+library(parallel)
+library(dplyr)
+library(stargazer)
+library(ggplot2)
+library(pastecs)
+library(readxl)
+library(purrr)
+library(QGglmm)
+library(purrr)
+library(coda)
+library(writexl)
+```
+
+# Introduction
+
+The goal of this script is to estimate the BLUP values for the phenotypic data that will be used to evaluate the genomic offset predictions. BLUP estimates allow us to generate phenotypic population values for each trait while accounting for covariates, such as genotype for clones, tree ID when we have multiple measurements per tree, and tree size to account for age in growth-related traits.
+Depending on the trait, we will select a specific period for climate data extraction. For each trait, the initial year is 1992 (the year of establishment of the clonal bank), with the following end years:
+- 2021 for leaf thickness
+- 2012 for shoot volume, stem length, spring elongation, and total open male strobili
+
+
+# Phenotypic data
+
+We loaded the phenotypic traits associated with: 
+
+Growth -> Shoot volume
+Growth_pheno -> spring elongation
+Repro_pheno -> total open strobili
+leaf_traits -> leaf thickness
+
+The first step is to load the functions that was used in the analyses. 
+```{r function}
+clean.MCMC <- function(x) {
+  sols <- summary(x)$solutions  ## pull out relevant info from model summary
+  Gcovs <- summary(x)$Gcovariances
+  Rcovs <- summary(x)$Rcovariances
+  fixed <- data.frame(row.names(sols), sols, row.names = NULL)  ## convert to dataframes with the row.names as the first col
+  random <- data.frame(row.names(Gcovs), Gcovs, row.names = NULL)
+  residual <- data.frame(row.names(Rcovs), Rcovs, row.names = NULL)
+  names(fixed)[names(fixed) == "row.names.sols."] <- "variable"  ## change the columns names to variable, so they all match
+  names(random)[names(random) == "row.names.Gcovs."] <- "variable"
+  names(residual)[names(residual) == "row.names.Rcovs."] <- "variable"
+  fixed$effect <- "fixed"  ## add ID column for type of effect (fixed, random, residual)
+  random$effect <- "random"
+  residual$effect <- "residual"
+  modelTerms <- as.data.frame(bind_rows(fixed, random, residual))  # merge it all together
+}
+
+
+plot.estimates <- function(x) {
+  if (class(x) != "summary.mcmc")
+    x <- summary(x)
+  n <- dim(x$statistics)[1]
+  par(mar=c(2, 9, 4, 1))
+  plot(x$statistics[,1], n:1,
+       yaxt="n", ylab="",
+       xlim=range(x$quantiles)*1.2,
+       pch=19,
+       main="Posterior means and 95% credible intervals")
+  grid()
+  axis(2, at=n:1, rownames(x$statistics), las=2)
+  arrows(x$quantiles[,1], n:1, x$quantiles[,5], n:1, code=0)
+  abline(v=0, lty=2)
+}
+
+
+myFun_h2Qst1 <- function(mcmc){  
+  out <- c(
+    posterior.mode((mcmc$VCV[,2])/(rowSums(mcmc$VCV))),
+    HPDinterval((mcmc$VCV[,2])/(rowSums(mcmc$VCV)))[1],
+    HPDinterval((mcmc$VCV[,2])/(rowSums(mcmc$VCV)))[2],
+    posterior.mode((mcmc$VCV[,2])/((mcmc$VCV[,2])+(mcmc$VCV[,3]))),
+    HPDinterval((mcmc$VCV[,2])/((mcmc$VCV[,2])+(mcmc$VCV[,3])))[1],
+    HPDinterval((mcmc$VCV[,2])/((mcmc$VCV[,2])+(mcmc$VCV[,3])))[2],
+    posterior.mode((mcmc$VCV[,1])/(rowSums(mcmc$VCV))),
+    HPDinterval((mcmc$VCV[,1])/(rowSums(mcmc$VCV)))[1],
+    HPDinterval((mcmc$VCV[,1])/(rowSums(mcmc$VCV)))[2],
+    posterior.mode((mcmc$VCV[,1])/(2*(mcmc$VCV[,2])+(mcmc$VCV[,1]))),
+    HPDinterval((mcmc$VCV[,1])/(2*(mcmc$VCV[,2])+(mcmc$VCV[,1])))[1],
+    HPDinterval((mcmc$VCV[,1])/(2*(mcmc$VCV[,2])+(mcmc$VCV[,1])))[2]
+  )
+  names(out) <- c("H2c_all","lo.ci.H2c_all","up.ci.H2c_all" ,"H2c","lo.ci.H2c","up.ci.H2c" ,"H2p","lo.ci.H2p","up.ci.H2p" ,"Qst","lo.ci.Qst","up.ci.Qst")
+  return(out)}
+
+# for the logit link, which is used when family=categorical
+myFun_h2Qst2 <- function(mcmc){  
+  out <- c(
+    posterior.mode((mcmc$VCV[,2])/(rowSums(mcmc$VCV)+(pi^2)/3)),
+    HPDinterval((mcmc$VCV[,2])/(rowSums(mcmc$VCV)+(pi^2)/3))[1],
+    HPDinterval((mcmc$VCV[,2])/(rowSums(mcmc$VCV)+(pi^2)/3))[2],
+    posterior.mode((mcmc$VCV[,2])/((mcmc$VCV[,2])+(mcmc$VCV[,3])+(pi^2)/3)),
+    HPDinterval((mcmc$VCV[,2])/((mcmc$VCV[,2])+(mcmc$VCV[,3])+(pi^2)/3))[1],
+    HPDinterval((mcmc$VCV[,2])/((mcmc$VCV[,2])+(mcmc$VCV[,3])+(pi^2)/3))[2],
+    posterior.mode(((mcmc$VCV[,1]))/(rowSums(mcmc$VCV)+(pi^2)/3)),
+    HPDinterval(((mcmc$VCV[,1]))/(rowSums(mcmc$VCV)+(pi^2)/3))[1],
+    HPDinterval(((mcmc$VCV[,1]))/(rowSums(mcmc$VCV)+(pi^2)/3))[2],
+    posterior.mode((mcmc$VCV[,1])/(2*(mcmc$VCV[,2])+(mcmc$VCV[,1]))),
+    HPDinterval((mcmc$VCV[,1])/(2*(mcmc$VCV[,2])+(mcmc$VCV[,1])))[1],
+    HPDinterval((mcmc$VCV[,1])/(2*(mcmc$VCV[,2])+(mcmc$VCV[,1])))[2]
+  )
+  names(out) <- c("H2c_all","lo.ci.H2c_all","up.ci.H2c_all" ,"H2c","lo.ci.H2c","up.ci.H2c" ,"H2pc","lo.ci.H2pc","up.ci.H2pc" ,"Qst","lo.ci.Qst","up.ci.Qst")
+  return(out)}
+```
+
+## data
+
+```{r phenotypic data}
+list_traits <- c("Shoot_Growth","Basal_area","Shoot_Elongation","Male_Strobili","leaf_traits")
+list_names <- c("growth","growth_bis","growth_pheno","repro_pheno","leaf_traits")
+
+for(x in 1: length(list_traits)){
+  
+  trait <- list_traits[x]
+  name <- list_names[x]
+  
+  path <- paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/phenotypic_data/common_garden/Individual_level_data/Taxus_",trait,".xlsx")
+phenotypic_data <- read_excel(path, na="NA")
+
+assign(paste0("phenotypic_data_",name),phenotypic_data)
+}
+```
+
+## Selection of the period
+
+For each traits, we calculated average values across years as traits values in a given year are influenced by conditions and events from previous years. We retained the maximum number of sampling years while also maximizing the number of trees. 
+```{r mean value, message=FALSE, warning=FALSE}
+#Growth
+
+##Shootvol
+#identify the number of measurement per plant
+phenotypic_data_growth_table <- data.frame(table(phenotypic_data_growth$Plant))
+
+#filter the number of measurement to keep the maximum number of individuals
+phenotypic_data_growth_filtered <- phenotypic_data_growth %>%
+  filter(Plant %in% phenotypic_data_growth_table$Var1[phenotypic_data_growth_table$Freq == 4])
+
+#mean values of the traits per plant
+mean_traits_shootvol <- phenotypic_data_growth_filtered %>%
+  group_by(Plant) %>%
+  summarize(mean_AverageShootVolume = mean(AverageShootVolume.mm3, na.rm = TRUE),
+            mean_StemLength = mean(StemLength.cm, na.rm = TRUE))
+
+mean_traits_shootvol_merge <- merge(mean_traits_shootvol,phenotypic_data_growth,"Plant")
+
+#keep only one value per plant (ex: 2012, it's not only the values of 2012)
+mean_traits_growth_f <- mean_traits_shootvol_merge %>%
+  filter(Year == 2012)
+
+##Basal area
+mean_traits_growth_bis_f <- data.frame(phenotypic_data_growth_bis) %>%
+  filter(across(c(SumAB.2021.cm2, StemLength.cm), ~ !is.na(.)))
+```
+```{r Growth phenology}
+# Growth phenology
+
+##Spring elong
+#identify the number of measurement per plant
+phenotypic_data_phenology_table <- data.frame(table(phenotypic_data_growth_pheno$Plant))
+
+#filter the number of measurement to keep the maximum number of individuals
+phenotypic_data_pheno_filtered <- phenotypic_data_growth_pheno %>%
+  filter(Plant %in% phenotypic_data_phenology_table$Var1[phenotypic_data_phenology_table$Freq == 3])
+
+#mean values of the traits per plant
+mean_traits_pheno <- phenotypic_data_pheno_filtered %>%
+  group_by(Plant) %>%
+  summarize(mean_springelong = mean(ProportionSpringElongation, na.rm = TRUE))
+
+mean_traits_pheno_merge <- merge(mean_traits_pheno,phenotypic_data_growth_pheno,"Plant")
+
+#keep only one value per plant (ex: 2012, it's not only the values of 2012)
+mean_traits_growth_pheno_f <- mean_traits_pheno_merge %>%
+  filter(Year == 2012)
+```
+
+```{r Reproductive phenology}
+# Reproductive phenology
+
+##Reproduction
+#identify the number of measurement per plant
+phenotypic_data_repro_table <- data.frame(table(phenotypic_data_repro_pheno$Plant))
+
+#filter the number of measurement to keep the maximum number of individuals
+phenotypic_data_repro_filtered <- phenotypic_data_repro_pheno %>%
+  filter(Plant %in% phenotypic_data_repro_table$Var1[phenotypic_data_repro_table$Freq == 3])
+
+#mean values of the traits per plant
+mean_traits_repro <- phenotypic_data_repro_filtered %>%
+  group_by(Plant) %>%
+  summarize(mean_proportion_open = mean(Proportion_total_open, na.rm = TRUE))
+
+mean_traits_repro_merge <- merge(mean_traits_repro,phenotypic_data_repro_pheno,"Plant")
+
+#keep only one value per plant (ex: 2012, it's not only the values of 2012)
+mean_traits_repro_pheno_f <- mean_traits_repro_merge %>%
+  filter(Year == 2012)
+```
+
+```{r Leaf_traits}
+#Leaf_traits
+phenotypic_data_leaftrait_table <- data.frame(table(phenotypic_data_leaf_traits$Plant))
+#table(phenotypic_data_leaftrait_table$Freq)#we retained 4
+
+#filter the number of measurement to keep the maximum number of individuals
+phenotypic_data_leaftrait_filtered <- phenotypic_data_leaf_traits %>%
+  filter(Plant %in% phenotypic_data_leaftrait_table$Var1[phenotypic_data_leaftrait_table$Freq == 4])
+
+#mean values of the traits per plant
+mean_traits_leaftraits <- phenotypic_data_leaftrait_filtered %>%
+  group_by(Plant) %>%
+  summarize(mean_StomDens = mean(StomDens.mm2, na.rm = TRUE),
+            mean_leafthickness = mean(LeafThickness.mm, na.rm = TRUE),
+            mean_LMA = mean(LMA.gm2,na.rm=T),
+            mean_D13C = mean(D13C,na.rm=T))
+
+mean_traits_leaftraits_merge <- merge(mean_traits_leaftraits,phenotypic_data_leaf_traits[,c(1:5)],"Plant")
+
+#keep only one value per plant (ex: 2012, it's not only the values of 2012)
+mean_traits_leaftraits_f <- mean_traits_leaftraits_merge %>%
+  filter(Year == "Y2021")
+```
+
+
+## Selection of the populations with enought trees
+
+We also want to check the number of measured individuals per population, retaining only populations with more than two individuals
+```{r number of measured indiv per pop, eval=F,echo=T}
+table(mean_traits_growth_f$Population)
+#We remove the ACEBDO, LASENIA
+
+table(mean_traits_growth_pheno_f$Population)
+#We remove the ACEBDO, ALCOY, LASENIA Quesada pop
+
+table(mean_traits_repro_pheno_f$Population)
+#We remove the BOCAHUERGANO, JERTE, LASENIA,PUEBLALILLO and RASQUERA 
+
+table(mean_traits_leaftraits_f$Population)
+#we can remove: ACEBEDO, ALCOY, LASENIA, and QUESADA
+```
+## Graphical visualization
+
+To select the type of distribution we used in the GLMM models, we investigated the shape of the data distribution for each traits
+```{r phenotypic_df_config}
+
+list_traits <- c("growth","growth_bis","growth_pheno","repro_pheno","leaftraits")
+for(x in 1: length(list_traits)){
+  
+  name <- list_traits[x]
+  df <- get(paste0("mean_traits_",name,"_f"))
+  
+df$Population<- as.factor(df$Population)
+df$Plant <- as.factor(df$Plant)
+df$Genet <- as.factor(df$Genet)
+
+assign(paste0("phenotypic_data_",name),df)
+}
+```
+
+
+```{r hist}
+hist(phenotypic_data_growth$mean_AverageShootVolume)
+#hist(phenotypic_data_growth_bis$SumAB.2021.cm2)
+hist(phenotypic_data_growth_pheno$mean_springelong)
+hist(phenotypic_data_repro_pheno$mean_proportion_open)
+#hist(phenotypic_data_leaftraits$mean_StomDens)
+hist(phenotypic_data_leaftraits$mean_leafthickness)
+#hist(phenotypic_data_leaftraits$mean_LMA)
+#hist(phenotypic_data_leaftraits$mean_D13C)
+```
+
+
+# MCMC GLMM models
+    
+We can now run the MCMC GLMM models for each traits. We need to specify the priors as we are working with Bayesian models. We selected a non-informative prior due to the lack of prior information. Additionally, we set the number of iterations to 1,500,000, the burn-in period to 50,000, and the thinning interval to 500, sampling every 500 iteration. We ran each model four times per trait (4 MCMC chains) to ensure stability. All traits follow a Gaussian distribution with continuous data.
+
+
+## Trait related to growth
+    
+### Shoot Volume
+
+For growth traits, since trees in the clonal bank vary in age, we used stem length as a covariate to account for differences in shoot volume associated with older trees. 
+
+```{r shootvolume model,echo=T,eval=F}
+set.seed(3)
+
+#phenotypic_data_growth$Sex <- as.factor(phenotypic_data_growth$Sex)
+#phenotypic_data_growth_wo_Na <- phenotypic_data_growth %>%group_by(Sex) %>% drop_na()
+
+#set the prior info for the fixed variables: year and the randoms ones: Population and Plant
+prior_ShootVol=list(R=list(V=1, nu=0.002),G=list((G1=list(V=1, nu=0.002)),(G2=list(V=1, nu=0.002)),(G3=list(V=1, nu=0.002))))
+
+#we can perform the model
+ShootVol<- mclapply(1:4, function(i) {#we can perform 4 MCMC 
+  ShootVol<-MCMCglmm(mean_AverageShootVolume~Sex,random=~Population + Genet +mean_StemLength,prior=prior_ShootVol, family="gaussian", nitt=1500000, burnin=50000, thin=500, data=phenotypic_data_growth_wo_Na, pr=TRUE, verbose=F) #the pheno is explain by the year as fixed because few number of parameters and by the Population and Plant factors, we are following a gaussian law due to the quantitative continuous type of the response variable (the pheno)
+}, mc.cores=1)
+
+#save the chains
+growth_model_wo_plantID<- ShootVol
+#save(ShootVol_model_wo_plantID,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/mean_years/ShootVol_model_wo_plantID.rda")
+```
+
+```{r load the MCMC growth }
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/mean_years/ShootVol_model_wo_plantID.rda")
+growth_model_wo_plantID <- ShootVol_model_wo_plantID
+```
+
+
+## Trait related to growth phenology
+
+### Spring elongation
+        
+```{r springelong model,echo=T,eval=F}
+set.seed(3)
+#phenotypic_data_growth_pheno_wo_Na <- phenotypic_data_growth_pheno %>%group_by(Sex) %>% drop_na()
+#phenotypic_data_growth_pheno_wo_Na$Sex <- as.factor(phenotypic_data_growth_pheno_wo_Na$Sex)
+
+#set the prior info for the fixed variables: year and the randoms ones: Population and Plant
+prior_springelong=list(R=list(V=1, nu=0.002),G=list((G1=list(V=1, nu=0.002)),(G2=list(V=1, nu=0.002))))
+
+#we can perform the model
+
+springelong<- mclapply(1:4, function(i) {#we can perform 4 MCMC 
+  springelong<-MCMCglmm(mean_springelong~Sex,random=~Population + Genet,prior=prior_springelong, family="gaussian", nitt=1500000, burnin=50000, thin=500, data=phenotypic_data_growth_pheno_wo_Na, pr=TRUE, verbose=F) #the pheno is explain by the year as fixed because few number of parameters and by the Population and Plant factors, we are following a gaussian law due to the quantitative continuous type of the response variable (the pheno)
+}, mc.cores=1)
+
+#save the chains
+growth_pheno_model_wo_plantID<- springelong
+#save(springelong_model_wo_plantID,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/mean_years/springelong_model_wo_plantID.rda")
+```
+
+```{r load the MCMC growth pheno}
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/mean_years/springelong_model_wo_plantID.rda")
+growth_pheno_model_wo_plantID <- springelong_model_wo_plantID
+```
+
+## Trait related to reproductive phenology
+
+### Proportion open strobili
+
+```{r mature Strobili model,echo=T,eval=F}
+set.seed(3)
+#set the prior info for the fixed variables: year and the randoms ones: Population and Plant
+prior_openstrob=list(R=list(V=1, nu=0.002),G=list((G1=list(V=1, nu=0.002)),(G2=list(V=1, nu=0.002))))
+
+#we can perform the model
+
+openstrob<- mclapply(1:4, function(i) {#we can perform 4 MCMC 
+  openstrob<-MCMCglmm(mean_proportion_open~1,random=~Population + Genet,prior=prior_openstrob, family="gaussian", nitt=1500000, burnin=50000, thin=500, data=phenotypic_data_repro_pheno, pr=TRUE, verbose=F) #the pheno is explain by the year as fixed because few number of parameters and by the Population and Plant factors, we are following a poisson law due to the count type of the response variable (the pheno)
+}, mc.cores=1)
+
+#save the chains
+openstrob_model_wo_plantID<- openstrob
+#save(openstrob_model_wo_plantID,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/mean_years/openstrob_model_wo_plantID.rda")
+```
+
+```{r load the MCMC open strob}
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/mean_years/openstrob_model_wo_plantID.rda")
+repro_pheno_model_wo_plantID <- openstrob_model_wo_plantID
+```
+
+
+## Leaf Traits 
+
+### Leaf thickness
+
+```{r Leaf thickness model,echo=T,eval=F}
+set.seed(3)
+#set the prior info for the fixed variables: year and the randoms ones: Population and Plant
+prior_leaftraits=list(R=list(V=1, nu=0.002),G=list((G1=list(V=1, nu=0.002)),(G2=list(V=1, nu=0.002))))
+
+#phenotypic_data_leaftraits$Sex<-as.factor(phenotypic_data_leaftraits$Sex)
+#we can perform the model
+leafthickness<- mclapply(1:4, function(i) {#we can perform 4 MCMC 
+  leafthickness<-MCMCglmm(mean_leafthickness~1,random=~Population + Genet,prior=prior_leaftraits, family="gaussian", nitt=1500000, burnin=50000, thin=500, data=phenotypic_data_leaftraits, pr=TRUE, verbose=F) #the pheno is explain by the year as fixed because few number of parameters and by the Population and Plant factors, we are following a poisson law due to the count type of the response variable (the pheno)
+}, mc.cores=1)
+
+#save the chains
+leafthickness_model_wo_plantID_wo_sex<- leafthickness
+#save(leafthickness_model_wo_plantID_wo_sex,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/mean_years/leafthickness_model_wo_plantID_wo_sex.rda")
+```
+
+```{r load the MCMC leafthickness}
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/mean_years/leafthickness_model_wo_plantID.rda")
+leafthickness_model_wo_plantID <-leafthickness_model_wo_plantID
+```
+
+
+# Evaluation of the models
+
+To evaluate the performance of the models, we can investigate several aspects: 
+
+## Autocorrelation within MCMC
+
+First we checked the autocorrelation between values within the same MCMC chain to ensure that our thinning interval was sufficient.
+```{r autocorrelation values MCMC, eval=F, echo=T}
+
+list_name<- c("Population","Genet")
+list_model <- c("growth","growth_pheno","repro_pheno","leafthickness")#"growth_bis","LMA","StomDens","D13C"
+
+for(i in 1:length(list_model)){
+  
+  model_pheno <- get(paste0(list_model[i],"_model_wo_plantID"))
+  name_pheno <- list_model[i]
+
+for(x in 1:2){
+  
+  name <- list_name[x]
+  
+  acf_list <- lapply(model_pheno, function(model) {
+  # Extract the MCMC samples for the random effects of provenance
+  mcmc_samples <- mcmc(model$VCV[, name])  
+  # Calculate ACF
+  acf_values <- acf(as.numeric(mcmc_samples), plot = FALSE)  # Convert to numeric if needed
+  return(acf_values)
+})
+  
+  # Plot the first ACF
+plot(acf_list[[1]], main=paste0("Autocorrelation for ",name," Random Effect ",name_pheno), col="black", lwd=2)
+
+colors <- c("red", "blue", "green")  # Colors for the additional chains
+for (i in 2:length(acf_list)) {
+  lines(acf_list[[i]]$lag, acf_list[[i]]$acf, col=colors[i-1], lwd=2)
+}
+# Add a legend to distinguish between the chains
+legend("topright", legend=paste("Chain", 1:length(model_pheno)), col=c("black", colors), lwd=2)
+
+plot
+#save
+png(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/figures_wo_plantID/checkmodel/autocorrelation/Autocorrelation_period_",name,"_",name_pheno,".png"));plot(acf_list[[1]], main=paste0("Autocorrelation for ",name," Random Effect ",name_pheno), col="black", lwd=2)
+colors <- c("red", "blue", "green")
+for (i in 2:length(acf_list)) {
+  lines(acf_list[[i]]$lag, acf_list[[i]]$acf, col=colors[i-1], lwd=2)
+}
+legend("topright", legend=paste("Chain", 1:length(model_pheno)), col=c("black", colors), lwd=2);dev.off()
+  }
+}
+```
+
+
+```{r Rmardown 1, include=FALSE}
+list_name<- c("Population","Genet")
+list_model_rmarkdown <- c("growth")
+for(i in 1:length(list_model_rmarkdown)){
+  model_pheno <- get(paste0(list_model_rmarkdown[i],"_model_wo_plantID"))
+  name_pheno <- list_model_rmarkdown[i]
+for(x in 1:2){
+  name <- list_name[x]
+  acf_list <- lapply(model_pheno, function(model) {
+  # Extract the MCMC samples for the random effects of provenance
+  mcmc_samples <- mcmc(model$VCV[, name])  
+  # Calculate ACF
+  acf_values <- acf(as.numeric(mcmc_samples), plot = FALSE)  # Convert to numeric if needed
+  return(acf_values)
+})
+  # Plot the first ACF
+plot(acf_list[[1]], main=paste0("Autocorrelation for ",name," Random Effect ",name_pheno), col="black", lwd=2)
+
+colors <- c("red", "blue", "green")  # Colors for the additional chains
+for (i in 2:length(acf_list)) {
+  lines(acf_list[[i]]$lag, acf_list[[i]]$acf, col=colors[i-1], lwd=2)
+}
+# Add a legend to distinguish between the chains
+legend("topright", legend=paste("Chain", 1:length(model_pheno)), col=c("black", colors), lwd=2)
+plot
+  }
+}
+```
+
+  
+## Chains convergence  
+  
+Then, we ensured that the MCMC chains were converging.
+```{r plot of MCMC chains, echo=T, eval=F}
+for(i in 1:length(list_model)){
+model_pheno <- get(paste0(list_model[i],"_model_wo_plantID"))
+  name_pheno <- list_model[i]
+
+for(x in 1: length(list_name)){
+  
+  name <- list_name[x]
+  
+  # Create MCMC lists for overall random effects (aggregated)
+mcmc_list <- mcmc.list(lapply(model_pheno, function(model) {
+  # Aggregate random effects for provenance
+  mcmc(model$VCV[, name])
+}))
+
+par(mfrow=c(2,1), mar=c(4,4,2,1))  # Two plots: one for provenance, one for plant ID
+
+# Plot trace plot for overall provenance random effect
+plot(mcmc_list, auto.layout=FALSE, main=paste0("Trace Plot for Overall ",name," Random Effect ",name_pheno), col=c("red", "blue", "green", "black"))
+
+#save
+png(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/figures_wo_plantID/checkmodel/convergence/MCMC_period_",name,"_",name_pheno,".png"));par(mfrow=c(2,1), mar=c(4,4,2,1))
+plot(mcmc_list, auto.layout=FALSE, main=paste0("Trace Plot for Overall ",name," Random Effect ",name_pheno), col=c("red", "blue", "green", "black"));dev.off()
+  }
+}
+```
+
+```{r Rmarkdown 2, include=FALSE}
+for(i in 1:length(list_model_rmarkdown)){
+model_pheno <- get(paste0(list_model_rmarkdown[i],"_model_wo_plantID"))
+  name_pheno <- list_model_rmarkdown[i]
+for(x in 1: length(list_name)){
+  name <- list_name[x]
+  # Create MCMC lists for overall random effects (aggregated)
+mcmc_list <- mcmc.list(lapply(model_pheno, function(model) {
+  # Aggregate random effects for provenance
+  mcmc(model$VCV[, name])
+}))
+par(mfrow=c(2,1), mar=c(4,4,2,1))  # Two plots: one for provenance, one for plant ID
+# Plot trace plot for overall provenance random effect
+plot(mcmc_list, auto.layout=FALSE, main=paste0("Trace Plot for Overall ",name," Random Effect ",name_pheno), col=c("red", "blue", "green", "black"))
+  }
+}
+```
+
+
+Graphically, the chains appear to converge. We calculated the Gelman-Rubin index to further investigate this: 
+```{r evaluating the models}
+list_model <- c("growth","growth_pheno","repro_pheno","leafthickness")#"growth_bis","LMA","StomDens","D13C"
+
+gelman_rubin_results <- list()
+
+for(i in 1:length(list_model)){
+  
+  # Get the model object
+  model_pheno <- get(paste0(list_model[i], "_model_wo_plantID"))
+  name_pheno <- list_model[i]
+  
+  # Combine the MCMC chains into a single mcmc.list
+  chaine_mc <- lapply(model_pheno, function(m) m$Sol)
+  chaine_mc <- do.call(mcmc.list, chaine_mc)
+  
+  # Gelman-Rubin (GR) criterion to assess convergence across MCMC chains
+  GRcriterion_index <- gelman.diag(chaine_mc)
+  
+  # Store the summary of the GR criterion in the list
+  gelman_rubin_results[[name_pheno]] <- list(
+    mpsrf = GRcriterion_index$mpsrf
+  )
+}
+gelman_rubin_results
+```
+
+We can see that the Gelman-Rubin values are below 1.1, which is defined as the threshold for convergence.
+
+## Similarity of the posterior distribution across chains
+
+We also looked at the posterior distribution to investigate the convergence of the MCMC results.
+```{r posterior distribution, echo=T, eval=F}
+
+for(i in 1:length(list_model)){
+  model_pheno <- get(paste0(list_model[i],"_model_wo_plantID"))
+  name_pheno <- list_model[i]
+
+for(x in 1:length(list_name)){
+  
+  name <-list_name[x]
+  
+  density_list <- lapply(model_pheno, function(model) {
+  # Extract the MCMC samples for the random effects of provenance
+  mcmc_samples <- as.numeric(mcmc(model$VCV[, name])) 
+  # Calculate density
+  density_values <- density(mcmc_samples)
+  return(density_values)
+})
+  #limit of the plot
+  max_density_value <- max(sapply(density_list, function(d) max(d$y)))
+  
+  # Plot the first density
+plot(density_list[[1]], main=paste0("Posterior distribution of the ",name," Random Effect value ",name_pheno), col="black", lwd=2, xlab="Value", ylab="Density",ylim=c(0, max_density_value * 1.02))
+
+# Overlay the remaining densities
+colors <- c("red", "blue", "green")  # Colors for the additional chains
+for (i in 2:length(density_list)) {
+  lines(density_list[[i]], col=colors[i-1], lwd=2)
+}
+
+# Add a legend to distinguish between the chains
+legend("topright", legend=paste("Chain", 1:length(model_pheno)), col=c("black", colors), lwd=2)
+
+#save
+png(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/figures_wo_plantID/postdistrib/Posterior_distrib_period_",name,"_",name_pheno,".png"));plot(density_list[[1]], main=paste0("Posterior distribution of the ",name," Random Effect value ",name_pheno), col="black", lwd=2, xlab="Value", ylab="Density",ylim=c(0, max_density_value * 1.02))
+colors <- c("red", "blue", "green")  # Colors for the additional chains
+for (i in 2:length(density_list)) {
+  lines(density_list[[i]], col=colors[i-1], lwd=2)
+}
+legend("topright", legend=paste("Chain", 1:length(model_pheno)), col=c("black", colors), lwd=2);dev.off()
+  }
+}
+```
+
+```{r Rmarkdown 3, include=FALSE}
+
+for(i in 1:length(list_model_rmarkdown)){
+  model_pheno <- get(paste0(list_model_rmarkdown[i],"_model_wo_plantID"))
+  name_pheno <- list_model_rmarkdown[i]
+for(x in 1:length(list_name)){
+  name <-list_name[x]
+  density_list <- lapply(model_pheno, function(model) {
+  # Extract the MCMC samples for the random effects of provenance
+  mcmc_samples <- as.numeric(mcmc(model$VCV[, name]))
+  # Calculate density
+  density_values <- density(mcmc_samples)
+  return(density_values)
+})
+  #limit of the plot
+  max_density_value <- max(sapply(density_list, function(d) max(d$y)))
+  # Plot the first density
+plot(density_list[[1]], main=paste0("Posterior distribution of the ",name," Random Effect value ",name_pheno), col="black", lwd=2, xlab="Value", ylab="Density",ylim=c(0, max_density_value * 1.02))
+
+# Overlay the remaining densities
+colors <- c("red", "blue", "green")  # Colors for the additional chains
+for (i in 2:length(density_list)) {
+  lines(density_list[[i]], col=colors[i-1], lwd=2)
+}
+# Add a legend to distinguish between the chains
+legend("topright", legend=paste("Chain", 1:length(model_pheno)), col=c("black", colors), lwd=2)
+  }
+}
+```
+
+# Blups values
+
+Finally, we extracted the BLUPs values from the models: 
+
+To calculate the BLUPs, we used the mean BLUP values across the four MCMC runs.
+```{r blups estimate}
+
+#list_model <- c("growth","growth_bis","growth_pheno","repro_pheno","leafthickness","LMA","StomDens","D13C")
+list_model <- c("growth","growth_pheno","repro_pheno","leafthickness")#"growth_bis","LMA","StomDens"
+
+for(i in 1:length(list_model)){
+  
+  model_pheno <- get(paste0(list_model[i],"_model_wo_plantID"))
+  name_pheno <- list_model[i]
+  
+#BLUPs values
+for(x in 1:4){
+  
+  model <- model_pheno[[x]] #extract the chains from the model 
+  blups<-data.frame(posterior.mode(model$Sol))
+  assign(paste0("blups_",name_pheno,"_",x),blups)
+  }
+}
+  
+for(i in 1:length(list_model)){
+  
+  name_pheno <- list_model[i]
+  
+  MC1 <- get(paste0("blups_",name_pheno,"_1"))
+  MC2 <- get(paste0("blups_",name_pheno,"_2"))
+  MC3 <- get(paste0("blups_",name_pheno,"_3"))
+  MC4 <- get(paste0("blups_",name_pheno,"_4"))
+
+  Blups_df <- data.frame(MC1,MC2,MC3,MC4)
+  Blups_df$mean_blup <- rowMeans(Blups_df)
+  
+#write_xlsx(data.frame(row.names(Blups_df),Blups_df[,c(5)]),paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/BLUPs_mean/Blups_",name_pheno,"final_period.xlsx"))
+}
+```
+
+
+# Draft: 
+
+Traits: 
+
+Basal area
+
+```{r Basal area model, eval=FALSE, include=FALSE}
+set.seed(3)
+
+#set the prior info for the fixed variables: year and the randoms ones: Population and Plant
+prior_Basal_area=list(R=list(V=1, nu=0.002),G=list((G1=list(V=1, nu=0.002)),(G2=list(V=1, nu=0.002)),(G3=list(V=1, nu=0.002))))
+
+#we can perform the model
+Basal_area<- mclapply(1:4, function(i) {#we can perform 4 MCMC 
+  Basal_area<-MCMCglmm(SumAB.2021.cm2~1,random=~Population + Genet +StemLength.cm,prior=prior_Basal_area, family="gaussian", nitt=1500000, burnin=50000, thin=500, data=phenotypic_data_growth_bis, pr=TRUE, verbose=F) #the pheno is explain by the year as fixed because few number of parameters and by the Population and Plant factors, we are following a gaussian law due to the quantitative continuous type of the response variable (the pheno)
+}, mc.cores=1)
+
+#save the chains
+Basal_area_model_wo_plantID<- Basal_area
+#save(Basal_area_model_wo_plantID,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/mean_years/Basal_area_model_wo_plantID.rda")
+```
+
+```{r load the MCMC growth_bis, eval=FALSE, include=FALSE}
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/mean_years/Basal_area_model_wo_plantID.rda")
+growth_bis_model_wo_plantID <- Basal_area_model_wo_plantID
+```
+
+LMA
+
+```{r LMA model, eval=FALSE, include=FALSE}
+set.seed(3)
+#set the prior info for the fixed variables: year and the randoms ones: Population and Plant
+prior_leaftraits=list(R=list(V=1, nu=0.002),G=list((G1=list(V=1, nu=0.002)),(G2=list(V=1, nu=0.002))))
+
+phenotypic_data_leaftraits$Sex<-as.factor(phenotypic_data_leaftraits$Sex)
+#we can perform the model
+LMA<- mclapply(1:4, function(i) {#we can perform 4 MCMC 
+  LMA<-MCMCglmm(mean_LMA~1,random=~Population + Genet,prior=prior_leaftraits, family="gaussian", nitt=1500000, burnin=50000, thin=500, data=phenotypic_data_leaftraits, pr=TRUE, verbose=F) #the pheno is explain by the year as fixed because few number of parameters and by the Population and Plant factors, we are following a poisson law due to the count type of the response variable (the pheno)
+}, mc.cores=1)
+
+#save the chains
+LMA_model_wo_plantID_wo_sex<- LMA
+#save(LMA_model_wo_plantID_wo_sex,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/mean_years/LMA_model_wo_plantID_wo_sex.rda")
+```
+
+```{r load the MCMC LMA, eval=FALSE, include=FALSE}
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/mean_years/LMA_model_wo_plantID.rda")
+
+LMA_model_wo_plantID <-LMA_model_wo_plantID
+```
+
+
+StomDens
+
+```{r StomDens model, eval=FALSE, include=FALSE}
+set.seed(3)
+#set the prior info for the fixed variables: year and the randoms ones: Population and Plant
+prior_leaftraits=list(R=list(V=1, nu=0.002),G=list((G1=list(V=1, nu=0.002)),(G2=list(V=1, nu=0.002))))
+
+phenotypic_data_leaftraits$Sex<-as.factor(phenotypic_data_leaftraits$Sex)
+#we can perform the model
+StomDens<- mclapply(1:4, function(i) {#we can perform 4 MCMC 
+  StomDens<-MCMCglmm(mean_StomDens~1,random=~Population + Genet,prior=prior_leaftraits, family="gaussian", nitt=1500000, burnin=50000, thin=500, data=phenotypic_data_leaftraits, pr=TRUE, verbose=F) #the pheno is explain by the year as fixed because few number of parameters and by the Population and Plant factors, we are following a poisson law due to the count type of the response variable (the pheno)
+}, mc.cores=1)
+
+#save the chains
+StomDens_model_wo_plantID_wo_sex<- StomDens
+#save(StomDens_model_wo_plantID_wo_sex,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/mean_years/StomDens_model_wo_plantID_wo_sex.rda")
+```
+
+```{r load the MCMC Stomdens, eval=FALSE, include=FALSE}
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/mean_years/StomDens_model_wo_plantID_wo_sex.rda")
+
+StomDens_model_wo_plantID <- StomDens_model_wo_plantID_wo_sex
+```
+
+
+D13C
+
+```{r D13C model,eval=FALSE, include=FALSE}
+set.seed(3)
+#set the prior info for the fixed variables: year and the randoms ones: Population and Plant
+prior_leaftraits=list(R=list(V=1, nu=0.002),G=list((G1=list(V=1, nu=0.002)),(G2=list(V=1, nu=0.002))))
+
+phenotypic_data_leaftraits$Sex<-as.factor(phenotypic_data_leaftraits$Sex)
+#we can perform the model
+D13C<- mclapply(1:4, function(i) {#we can perform 4 MCMC 
+  D13C<-MCMCglmm(mean_D13C~Sex,random=~Population + Genet,prior=prior_leaftraits, family="gaussian", nitt=1500000, burnin=50000, thin=500, data=phenotypic_data_leaftraits, pr=TRUE, verbose=F) #the pheno is explain by the year as fixed because few number of parameters and by the Population and Plant factors, we are following a poisson law due to the count type of the response variable (the pheno)
+}, mc.cores=1)
+
+#save the chains
+D13C_model_wo_plantID<- D13C
+#save(D13C_model_wo_plantID,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/mean_years/D13C_model_wo_plantID.rda")
+```
+
+```{r load the MCMC,eval=FALSE, include=FALSE}
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/mean_years/D13C_model_wo_plantID.rda")
+```
