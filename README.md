@@ -29,8 +29,12 @@ Genomic and climatic data for the range-wide populations were formatted to perfo
 - Graphical representation 
 
 ### Phenotypic data clonal bank
+### [4. Phenotypic data clonal bank](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/Phenotypic_data_clonal_bank.html)
 
-soon
+- Phenotypic data distribution and sampling years
+- BLUPs models using GLMM MCMC models
+- Evaluation of BLUPs models
+- Population BLUPs estimate for each traits
 
 ### [5. Climatic data clonal bank](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/Climatic_data_clonal_bank.html)
 
