@@ -115,6 +115,7 @@ RDA and GF genomic offsets for the clonal bank populations
 
 ### [15. Association fitness proxies ~ genomic offset predictions](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/Relationship_fitness_genomic_offset.html)
 
+- Correlation across phenotypic traits
 - Composite fitness index
 - Relationship fitness ~ genomic offset using:
     - Pearson correlation
