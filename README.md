@@ -32,9 +32,12 @@ Genomic and climatic data for the range-wide populations were formatted to perfo
 
 soon
 
-### Climatic data clonal bank
+### [5. Climatic data clonal bank](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/Climatic_data_clonal_bank.html)
 
-soon
+- Comparison of point-based layer and raster data
+- Climatic data for the populations planted in the clonal bank for the reference period in their natural environment
+- Climatic data in the clonal bank for each trait for the period: clonal bank establishment to the last year of measurement of the trait
+- Comparison of the climate of the clonal bank and the climate of each population planted in the clonal bank
 
 
 ## Insights into the potental local adaptation to climate
