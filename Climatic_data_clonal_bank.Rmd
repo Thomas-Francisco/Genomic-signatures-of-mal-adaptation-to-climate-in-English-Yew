@@ -1,0 +1,379 @@
+---
+title: "Climatic_data_clonal_bank"
+author: "Thomas Francisco"
+date: "2024-09-09"
+output:
+  html_document:
+    number_sections: true #titles
+    toc: true #table of content
+    toc_float: true # enable the toc to be on the side of the text, always visible
+    collapsed: True #control if the toc label will only display top level titles
+    toc_depth: 3
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache = FALSE) 
+
+rm(list = ls())
+
+library(dplyr) 
+library(tidyverse)
+library(ggplot2)
+library(corrplot)  
+library(dismo)
+```
+
+
+# Introduction 
+
+The script extracts climatic data for populations in the clonal bank (CB) and their natural locations. 
+Climatic data coming from **ClimateDT** are in two formats: point-based layers and raster data.
+For the populations' origin areas, we used climatic data from the reference period (1901-1950) in raster format. For the CB in Spain, we used a specific time period corresponding to each phenotypic trait measurement. The periods are:  
+- Shoot Volume, stem long and spring elongation,Total open mature strobili (male): 1992-2012  
+- Leaf thickness: 1992-2021  
+
+# Comparison point-based layer and raster data
+
+Climatic data coming from **ClimateDT** are available in two formats: point-based layers and raster data.
+For the clonal bank (CB) location, we used point-based data to obtain climate information over a specific period between the CB’s establishment and the year of trait measurement. However, raster data, offering more climate models for future projections, was applied to analyze the range-wide dataset. This script aims to verify consistency between the point-based and raster data for CB populations to determine if raster data could be used to validate models built on point-based data.  
+For each traits, the climatic period is the year of establishment of the clonal bank (1992) to the latest year of trait measurement.  
+One key difference between raster and point-based data lies in their formats:
+- point-based data are available in one value per year for each variables (at each populations/pixel selected).
+- raster data are not so accurate, we have the average values over the selected period. 
+  
+Bioclimatic (bio) and other climate variables are derived from monthly values of minimum temperature (tmin), maximum temperature (tmax), and precipitation. Therefore, to get an accurate mean for bio variables over a period (e.g., bio1 from 1901–1950), we must first average tmin, tmax, and precipitation for each month individually, resulting in one value for each month (January, February, etc.) over the period of interest.
+Using these monthly averages, we can then apply the **biovars** function from the **Dismo** R package to compute the 19 bioclimatic variables for the specified period (e.g., 1901–1950). For other climate variables like AHM over the same period, we can follow ClimateDT’s protocol by incorporating the newly generated bio1, bio10, bio12, etc., values from biovars.
+
+## Climatic data 
+
+### Layer points data
+
+```{r meta_data}
+meta_data <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Populations/Populations_CG_regions.csv",h=T,sep=";",dec=",")
+```
+
+First, we loaded the tmin, tmax and prec data from the establishment of the clonal bank to the last measurement (1992-2021) extracted from **ClimateDT**
+```{r loading past climatic data layer points}
+Pre_past_climatic_data_point <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_data/Common_garden_pop/clim_data_pop_CG.csv",h=T,sep=";",dec=",")
+```
+
+
+Calculation of the bioclim variables using biovars: 
+```{r calculation bioclim variables}
+
+  climatic_data_filtered <- data.frame(Pre_past_climatic_data_point) %>% 
+    mutate(across(6:41, as.numeric))#pass the variables in numeric
+#do the mean of each year of data for each climatic variables and that's for each ID (pop)
+  climatic_data_filtered_mean <- climatic_data_filtered %>% 
+  group_by(ID) %>% 
+  summarize(across((5):(40), ~ mean(.))) ##-1 because, ID is no longer a columns but a column names so it does not count it as a column
+  #we need to extract the ID, longi and lati from the dataframe with all the rows
+  climatic_data_mean <- climatic_data_filtered %>% 
+    group_by(ID) %>% #groups the row by ID
+    slice_head(n = 1) %>% #keep only the first row of each groups
+    dplyr::select(c(1:3))#select only the 3 first columns
+  #add the longitude and latitude variables
+   Mean_pre_variables <- data.frame(climatic_data_mean[,c(1:3)],climatic_data_filtered_mean[,-1]) #-1 because ID is already in
+
+   data_climatic <- data.frame(Mean_pre_variables)
+   
+  #we extracted the prec, tmn and tmx from the inpute data
+prec <- data.frame(t(data_climatic %>% dplyr::select(starts_with("prc"))))
+tmn <- data.frame(t(data_climatic %>% dplyr::select(starts_with("tmn"))))
+tmx <- data.frame(t(data_climatic %>% dplyr::select(starts_with("tmx"))))
+
+  ##bio calculation
+Bio_data <- data.frame(biovars(prec,tmn,tmx))
+```
+
+
+### Raster data
+
+Raster data have been obtained from Maurizio Marchi (IBBR-CNR), one of the creator of **ClimateDT**, because raster are not directly available on **ClimateDT**. 
+```{r load raster format}
+#load past and future raster data
+climatic_variables_to_keep <-c("bio1", "bio12", "bio15","bio2","bio4","bio9") #subset of retained clim var, see script processing clim data
+list_raster <- c("past_climatic_data_raster")
+
+for(x in 1:length(list_raster)){
+  name_clim <- c("past")#name final raster
+  var <- list_raster[x]#name of the raster
+  load(paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Genomic_offset/RDA/",var,".Rdata")) #load data
+  raster_clim <- get(var)[[climatic_variables_to_keep]]#keep only var in clim_variables to keep
+  names(raster_clim)=c("Annual_Tc","Annual_P","P_Seasonality","Diurnal_range_Tc","Tc_Seasonality","Tc_driest_quarter") #change the name to match the names of the scaled and center values
+  
+  assign(paste0("raster_",name_clim,"_clim"),raster_clim) 
+}
+```
+
+```{r extract the climatic data}
+#first we need to extract the climatic data
+list_coord <- c("coords_pop")
+list_name <- c("natural_pop")
+
+coords_pop <- data.frame(apply(meta_data[,c(3:4)], 2, as.numeric))#we need to have longitude then latitude
+
+coords_CG <- data.frame(meta_data[,c(1,2)],Longitude=c("-4.0125"),Latitude=c("40.91056")) # coordinates of the clonal bank
+coords_CG_f <- data.frame(coords_CG[,-c(1,2)])
+
+coords_CG_f$Longitude<- as.numeric(coords_CG_f$Longitude);coords_CG_f$Latitude<- as.numeric(coords_CG_f$Latitude)                     
+                        
+for(x in 1: length(list_name)){
+  
+  coord <- get(list_coord[x])
+  name <- list_name[x]
+  
+  clim_data <- raster::extract(raster_past_clim, coord)
+    clim_data_order <- data.frame(clim_data[,c(1,4,5,6,2,3)])
+    
+  assign(paste0("clim_df_",name),clim_data_order)
+}
+```
+
+  
+## Comparison both datasets
+
+```{r transform the name of the layer of points dataframe and merge dataframes}
+#if this is the period 1901_1950 then
+layer_data <- data.frame(climatic_data_filtered_mean$ID,meta_data$Region,Bio_data[,c(1,2,4,9,12,15)])
+colnames(layer_data) <- c("Population","Region","bio1","bio2","bio4","bio9","bio12","bio15")
+colnames(layer_data)[3:8] <- paste0(colnames(layer_data)[3:8], "_layer_of_points")
+
+##raster data for period 1901-1950
+raster_data <- data.frame(climatic_data_filtered_mean$ID,meta_data$Region,clim_df_natural_pop)
+colnames(raster_data) <- c("Population","Region","bio1","bio2","bio4","bio9","bio12","bio15")
+colnames(raster_data)[3:8] <- paste0(colnames(raster_data)[3:8], "_raster")
+
+#general data frame with the 2 methods
+data_both_method <- data.frame(merge(layer_data,raster_data,"Population"))
+
+```
+
+```{r comparision between layer points and raster}
+bioclim_vars <- c("bio1","bio2","bio4","bio9","bio12","bio15")
+for (var in bioclim_vars) {
+  # Extract the data for the bioclimatic variable for the two periods
+  data_subset <- data.frame(data_both_method[, paste0(var, "_layer_of_points")], data_both_method[, paste0(var,"_raster")]) #for each variable in bioclim_vars, we extract the two periods and created a data.frame with only these two variables. 
+  colnames(data_subset) <- c("var1", "var2")
+
+  # Create scatterplot to compare the bioclimatic variable between the two periods
+  scatterplot_plot <- 
+ggplot(data_subset,aes(x=data_subset[,1],y=data_subset[,2])) +
+  geom_point(aes(color=data_both_method$Region.x),size=3)+
+  geom_abline(intercept = 0, slope = 1, color="gray60")+
+    scale_colour_manual(name = "Regions",
+                            values = c("orangered3","gold2","darkorchid3","navyblue","turquoise2","darkgreen")) +
+    xlab("Layer of points")+
+    ylab("Raster")+
+    ggtitle(paste0("Comparison climatic values ",var," methods for the
+26 Taxus baccata populations planted in the clonal bank "))+ 
+    theme_set(theme_bw())
+
+  plot(scatterplot_plot)
+  
+#save the plots
+pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/climate/Common_garden_comparison_layer_raster/Screeplot_comparison_",var,"_raster_layer.pdf"));print(scatterplot_plot);dev.off()
+}
+```
+
+Globally, we observed that for the majority of the populations, we have almost identical values across raster and layer of points. These results suggest that the two data types could be used interchangeably.
+
+
+# Natural populations climatic data (reference period: 1901-1950)
+    
+```{r meta_data wo regions}
+meta_data_wo_regions <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Populations/Populations_common_garden.csv",h=T,sep=";",dec=",")
+```
+  
+  
+```{r load climatic data raster format}
+#load past and future raster data
+climatic_variables_to_keep <-c("bio1", "bio12", "bio15","bio2","bio4","bio9") #subset of retained clim var, see script processing clim data
+list_raster <- c("past_climatic_data_raster")
+
+for(x in 1:length(list_raster)){
+  name_clim <- c("present")#name final raster
+  var <- list_raster[x]#name of the raster
+  load(paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Genomic_offset/RDA/",var,".Rdata")) #load data
+  raster_clim <- get(var)[[climatic_variables_to_keep]]#keep only var in clim_variables to keep
+  names(raster_clim)=c("Annual_Tc","Annual_P","P_Seasonality","Diurnal_range_Tc","Tc_Seasonality","Tc_driest_quarter") #change the name to match the names of the scaled and center values
+  
+  assign(paste0("raster_",name_clim,"_clim"),raster_clim) 
+}
+```
+
+
+```{r extract and scale the climatic data}
+#first we need to extract the climatic data
+list_coord <- c("coords_pop")
+list_name <- c("natural_pop")
+
+#To ensure consistency, we standardised by using the same values as the climatic data used in the GEA models  
+load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_data/new_selection/scale_env_value_new_cli.Rdata")
+load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_data/new_selection/center_env_value_new_cli.Rdata")
+
+coords_pop <- data.frame(apply(meta_data_wo_regions[,c(2:3)], 2, as.numeric))#we need to have longitude then latitude
+                        
+for(x in 1: length(list_name)){
+  
+  coord <- get(list_coord[x])
+  name <- list_name[x]
+  
+  clim_data <- raster::extract(raster_present_clim, coord)
+    clim_data_order <- data.frame(clim_data[,c(1,4,5,6,2,3)])#put it in the same order as center_env and scale object
+    
+  # Standardization of the environmental variables
+  clim_data_scale <- as.data.frame(scale(clim_data_order, center=center_env_value_new_cli, scale=scale_env_value_new_cli))
+  
+  assign(paste0("clim_df_",name),clim_data_scale)
+}
+```
+
+
+```{r save natural pop clim data}
+save(clim_df_natural_pop,file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/validation_GO/climatic_data/clim_df_natural_pop.Rdata")
+```
+
+  
+    
+# Clonal bank climatic data
+      
+We can load the data and separate it by periods: 
+```{r loading layer points data}
+Climatic_data_CG <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_data/Common_garden_pop/CG_climatic_data_T.csv",h=T,sep=";",dec=",")
+```
+
+
+```{r split the pre dataframe based on the period}
+clim_CG_2012 <- Climatic_data_CG[Climatic_data_CG$Year <= 2012,]
+clim_CG_2021 <- Climatic_data_CG
+```
+
+We can calculate the bioclim variables with the biovar function: 
+```{r calculation bioclim variables CG}
+list_clim_df <- c("clim_CG_2012","clim_CG_2021")
+
+for(x in 1: length(list_clim_df)){
+  
+  clim_df <- get(list_clim_df[x])
+  name <- list_clim_df[x]
+  
+  climatic_data_filtered <- data.frame(clim_df) %>% 
+    mutate(across(6:41, as.numeric))#pass the variables in numeric
+#do the mean of each year of data for each climatic variables and that's for each ID (pop)
+  
+  climatic_data_filtered_mean <- climatic_data_filtered %>% 
+   group_by(ID) %>% 
+  summarize(across((5):(40), ~ mean(.))) ##-1 because, ID is no longer a columns but a column names so it does not count it as a column
+  #we need to extract the ID, longi and lati from the dataframe with all the rows
+  climatic_data_mean <- climatic_data_filtered %>% 
+    group_by(ID) %>% #groups the row by ID
+    slice_head(n = 1) %>% #keep only the first row of each groups
+    dplyr::select(c(1:3))#select only the 3 first columns
+  #add the longitude and latitude variables
+   Mean_pre_variables <- data.frame(climatic_data_mean[,c(1:3)],climatic_data_filtered_mean[,-1]) #-1 because ID is already in
+
+   data_climatic <- data.frame(Mean_pre_variables)
+   
+  #we extracted the prec, tmn and tmx from the inpute data
+prec <- data.frame(t(data_climatic %>% dplyr::select(starts_with("prc"))))
+tmn <- data.frame(t(data_climatic %>% dplyr::select(starts_with("tmn"))))
+tmx <- data.frame(t(data_climatic %>% dplyr::select(starts_with("tmx"))))
+
+  ##bio calculation
+Bio_data <- data.frame(biovars(prec,tmn,tmx))
+
+assign(paste0("df_",name),Bio_data)
+}
+```
+
+Scaling the values of the retained bio variables:
+```{r scale values}
+
+list_clim_name <- c("CG_2012","CG_2021")
+for(x in 1: length(list_clim_df)){
+  
+  name <- list_clim_name[x]
+  
+  df <- get(paste0("df_clim_",name))
+  
+  df_retained <- data.frame(df[,c(1,2,4,9,12,15)])
+  colnames(df_retained) <- row.names(data.frame(scale_env_value_new_cli))
+  
+  assign(paste0("clim_df_",name),df_retained)
+  
+  #scale
+  df_scale <- as.data.frame(scale(df_retained, center=center_env_value_new_cli, scale=scale_env_value_new_cli))
+  
+  assign(paste0("clim_df_scale_",name),df_scale)
+}
+```
+
+
+```{r save df CG clim data, include=FALSE}
+save(clim_df_CG_2012,file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/validation_GO/climatic_data/clim_df_CG_2012.Rdata")
+save(clim_df_CG_2021,file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/validation_GO/climatic_data/clim_df_CG_2021.Rdata")
+
+save(clim_df_scale_CG_2012,file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/validation_GO/climatic_data/clim_df_scale_CG_2012.Rdata")
+save(clim_df_scale_CG_2021,file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/validation_GO/climatic_data/clim_df_scale_CG_2021.Rdata")
+```
+
+
+# Comparison climate CB vs natural climate of populations
+    
+We can analyze the climate of the clonal bank (CB) in comparison to the one of the populations to determine whether the CB represents an extreme environment relative to the populations. This investigation will help us understand the climatic differences and assess how they may influence the growth and phenotypic traits of the populations in the common garden.
+
+
+```{r gather climatic data}
+#CB climatic data 1992-
+load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/validation_GO/climatic_data/clim_df_CG_2012.Rdata")
+load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/validation_GO/climatic_data/clim_df_CG_2021.Rdata")
+
+clim_df_CG_2012_tot <- data.frame(Population=c("CG_2012"),Region="CG_2012",clim_df_CG_2012)
+
+clim_df_CG_2021_tot <- data.frame(Population=c("CG_2021"),Region="CG_2021",clim_df_CG_2021)
+
+#Pop climatic data 1901-1950
+colnames(raster_data) <- colnames(clim_df_CG_2012_tot)
+
+data_clim_tot <- rbind(clim_df_CG_2012_tot,clim_df_CG_2021_tot,raster_data)
+```
+
+
+```{r violin plot in a loop}
+#do the violin plot in a loop for each climatic variables
+
+#input data for the loop
+data <- data_clim_tot
+regions <-data_clim_tot$Region
+bioclim_vars <- colnames(clim_df_CG_2012_tot[,-c(1,2)])
+unit_var <- c("°c","°c","°c","°c","mm","mm")
+
+#results: the loop
+for (x  in 1:length(bioclim_vars)) {
+  var <- bioclim_vars[x]
+   unit <- unit_var[x]
+  data_subset <- data.frame(data[, paste0(var)]) #for each variable in bioclim_vars, we extract the two periods and created a data.frame with only these two variables. 
+  colnames(data_subset) <- c("var1")
+  # Create scatterplot to compare the bioclimatic variable between the two periods
+  plot <- ggplot(data_subset, aes(x =var,y= var1)) +#var is the values and var1 is just the name of the variable 
+  geom_violin(trim = FALSE) +
+  scale_colour_manual(name = "Region",
+                            values = c("orangered3","gold2","darkorchid3","blue","turquoise2","red","black","darkgreen"))+
+  geom_point(aes(color = regions), shape = 16,size=3, position = position_jitter(seed = 1, width = 0.2)) +
+  labs(colour="Regions",x="variable",y=paste0("values ","(",unit,")"),title=paste0("Violin Plot of ",var," differences across populations"))+
+  theme(plot.title = element_text(hjust = 0.5))
+  
+  # Add any additional customization or saving the plot if needed
+png(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/climate/Common_garden _climate/violin_plot/violin_plot_",var,".png"));print(plot)
+;dev.off()
+
+# Print the plot
+  print(plot)
+}
+```
+
+Interpretation: The climatic range among the populations is substantial, particularly regarding annual precipitation and temperature. For the clonal bank (CB), we observed that, compared to the other populations, the annual temperature is relatively high, especially during the driest quarter. Additionally, the temperature seasonality and diurnal temperature range are also important.
+Regarding the precipitations, the annual precipitations are quite low and the seasonal precipitations are following the mean value of the rest of the populations. 
+These results suggest that the climate of the clonal bank (CB) could induce higher aridity constraints and greater temperature seasonality due to high annual temperature variability. This implies that adaptation to drought resistance and late growth/reproductive phenology could be advantageous in the climate of the CB because of the high temperatures during the driest period, low precipitation, and significant seasonal temperature fluctuations, which may lead to late frost events.
