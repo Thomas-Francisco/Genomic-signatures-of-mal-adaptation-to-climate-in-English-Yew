@@ -33,7 +33,7 @@ library(vegan)
 # Introduction
 
 This script calculates the genomic offset predictions for the populations in the common garden. The goal is to assess whether there is a relationship between fitness and the genomic offset (GO) predictions, which will help us evaluate the accuracy of our model. The genomic offset is calculated as the distance between the genomic composition  predicted by the GEA model in the climate of the population and in the common garden. Populations whith higher genomic offset (i.e. the ones with the most different local adaptation) should exhibit lower fitness in the common garden.
-To achieve this, we are utilizing an indenpend set of populations planted in a single clonal bank garden located in central Spain (Segovia).
+To achieve this, we are utilizing an independent set of populations planted in a single clonal bank garden located in central Spain (Segovia).
 
 # Data 
 
@@ -73,7 +73,7 @@ We predicted the genomic composition for the populations both in their natural h
 
 Load GEA models 
 ```{r load GEA models}
-list_models <- c("model_GEA_RDA_all","model_GEA_RDA_random","model_GEA_RDA_random_same_AF","model_GEA_RDA_CG","model_GEA_RDA_outliers_LC","model_GEA_RDA_outliers_MC")
+list_models <- c("model_GEA_RDA_all","model_GEA_RDA_random","model_GEA_RDA_random_same_AF","model_GEA_RDA_CG","model_GEA_RDA_outliers_LC","model_GEA_RDA_outliers_MC","model_GEA_RDA_random_AF_V2","model_GEA_RDA_all_outliers")
 
 for(x in 1:length(list_models)){
   
@@ -92,7 +92,7 @@ load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_ne
 genomic_matrix <- data_allelic_frequencies_29pop_adapcon_gentree_475_8616  
 
 
-list_models <- c("random_neutral_set_SNPs_T_adapcon_gentree_bis","random_set_taxus","outliers_set_final_overlapping_no_LD_LC_new_var","outliers_set_final_overlapping_no_LD_new_var")
+list_models <- c("random_neutral_set_SNPs_T_adapcon_gentree_bis","random_set_taxus","outliers_set_final_overlapping_no_LD_LC_new_var","outliers_set_final_overlapping_no_LD_new_var","random_set_taxus_not_overlap_both_dataset_V2","unique_outliers")
 for(i in 1:length(list_models)){
   model <- list_models[i]
   load(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/",model,".Rdata"))
@@ -100,7 +100,7 @@ for(i in 1:length(list_models)){
 
 list_random_SNPs <- colnames(random_neutral_set_SNPs_T_adapcon_gentree_bis)
 list_random_SNPs_same_AF <- random_set_taxus$name_snps
-
+list_random_SNPs_same_AF_V2 <- random_set_taxus_not_overlap_both_dataset_V2$name_snps
 #CG common
 load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/gen_matrix_imp_CG.Rdata")
 CG_common_set <- intersect(outliers_set_final_overlapping_no_LD_LC_new_var, colnames(gen_matrix_imp_CG))
@@ -110,8 +110,8 @@ save(CG_common_set,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/ta
 
 Now, based on these models, we calculated the two genomic compositions. We can use the predict function to do this
 ```{r predictions_adaptive_values}
-list_rda <- c("model_GEA_RDA_all","model_GEA_RDA_random","model_GEA_RDA_random_same_AF","model_GEA_RDA_outliers_LC","model_GEA_RDA_outliers_MC","model_GEA_RDA_CG")
-list_set <- c("all","random","random_same_AF","LC","MC","CG")
+list_rda <- c("model_GEA_RDA_all","model_GEA_RDA_random","model_GEA_RDA_random_same_AF","model_GEA_RDA_outliers_LC","model_GEA_RDA_outliers_MC","model_GEA_RDA_CG","model_GEA_RDA_random_AF_V2","model_GEA_RDA_all_outliers")
+list_set <- c("all","random","random_same_AF","LC","MC","CG","random_AF_V2","all_outliers")
 
 K = 2 # number of rda axes retained
 
@@ -174,8 +174,8 @@ genomic_offset_pop <- function(RDA, K, Past_score, Future_score,meta_data){
 
 We ran the function on the predicted genomic compo:
 ```{r genomic offset calculation}
-list_rda <- c("model_GEA_RDA_all","model_GEA_RDA_random","model_GEA_RDA_random_same_AF","model_GEA_RDA_outliers_LC","model_GEA_RDA_outliers_MC","model_GEA_RDA_CG")
-list_name <- c("all","random", "random_same_AF", "LC", "MC", "CG")
+list_rda <- c("model_GEA_RDA_all","model_GEA_RDA_random","model_GEA_RDA_random_same_AF","model_GEA_RDA_outliers_LC","model_GEA_RDA_outliers_MC","model_GEA_RDA_CG","model_GEA_RDA_random_AF_V2","model_GEA_RDA_all_outliers")
+list_name <- c("all","random", "random_same_AF", "LC", "MC", "CG","random_AF_V2","all_outliers")
 
 K = 2  # Number of RDA axes retained
 
@@ -236,7 +236,7 @@ for (x in 1:length(list_rda)) {
 
 Load the GEA models
 ```{r load GEA GF models}
-list_models <- c("all","random_bis","random_same_AF_bis","LC","CG")
+list_models <- c("all","random_bis","random_same_AF_bis","LC","CG","random_same_AF_V2","all_outliers")
 
 for(i in 1:length(list_models)){
   model <- list_models[i]
@@ -267,10 +267,10 @@ genomic_offset_function <- function(gfMod, vars, env1, env2, combined=F,
 
 We can apply this function to our dataset: 
 ```{r Run genomic offset function}
-list_set <- c("Run_GEA_GF_all","Run_GEA_GF_random_bis","Run_GEA_GF_random_same_AF_bis","Run_GEA_GF_LC","Run_GEA_GF_CG")
+list_set <- c("Run_GEA_GF_all","Run_GEA_GF_random_bis","Run_GEA_GF_random_same_AF_bis","Run_GEA_GF_LC","Run_GEA_GF_CG","Run_GEA_GF_random_same_AF_V2","Run_GEA_GF_all_outliers")
 list_CG <- c("2012","2021")
 vars <- colnames(clim_df_natural_pop)
-list_name <- c("all","random","random_same_AF","LC","CG")
+list_name <- c("all","random","random_same_AF","LC","CG","random_AF_V2","all_outliers")
 
 #vars = past climatic data used in GEA
 

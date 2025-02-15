@@ -14,7 +14,7 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(cache = FALSE)
 
-#rm(list = ls()) 
+rm(list = ls()) 
 library(dplyr) 
 library(tidyverse)
 library(ggplot2)
@@ -25,6 +25,8 @@ library(vegan)
 library(plyr)
 library(writexl)
 library(rasterize)
+library(sf)
+library(FactoMineR)
 ```
 
 # Introduction
@@ -197,13 +199,13 @@ Variable_selection_pv0.05 <- ordiR2step(RDA_null, RDA_full, Pin = 0.05, R2permut
 nbmodels <- 20
 
 # Stepwise selection with ordiR2step function
-rep20_variable_selec_pv0.05 <- lapply(1:nbmodels, function(x) {
-  mod <- ordiR2step(RDA_null, RDA_full, Pin = 0.05, R2permutations = 1000, R2scope = T)
-  return(names(mod$CCA$envcentre))}) %>% 
-  setNames(paste0("model",1:nbmodels)) %>% 
-  ldply(function(x) data.frame(variables=x),.id="models") %>%  
-  dplyr::summarise(count(variables)) %>% 
-  setNames(c("variable","count"))
+#rep20_variable_selec_pv0.05 <- lapply(1:nbmodels, function(x) {
+  #mod <- ordiR2step(RDA_null, RDA_full, Pin = 0.05, R2permutations = 1000, R2scope = T)
+  #return(names(mod$CCA$envcentre))}) %>% 
+  #setNames(paste0("model",1:nbmodels)) %>% 
+  #ldply(function(x) data.frame(variables=x),.id="models") %>%  
+  #dplyr::summarise(count(variables)) %>% 
+  #setNames(c("variable","count"))
 ```
 
 ```{r save and load rep ordi2steps, include=FALSE}
@@ -294,14 +296,14 @@ Based on the climatic selection, we can keep for present and future periods, the
 
 ```{r load present raster data}
 #create an R object where all the climatic rasters are.
-ras.bio <- stack(list.files("C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/1991-2020_raster_climateDT/", pattern = ".tif$", full.names = T)) 
+ras.bio_present <- stack(list.files("C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/1991-2020_raster_climateDT/", pattern = ".tif$", full.names = T)) 
 #names of the raster (because they are not in the classic order Bio 1, 2 etc they are order by number so bio 1, 10, 11 etc)
-names(ras.bio) <- unlist(strsplit(unlist(lapply(strsplit(list.files("C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/1991-2020_raster_climateDT/", pattern = ".tif$", full.names = T), split = "C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/1991-2020_raster_climateDT/"), function(x) x[2])), split = ".tif"))
+names(ras.bio_present) <- unlist(strsplit(unlist(lapply(strsplit(list.files("C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/1991-2020_raster_climateDT/", pattern = ".tif$", full.names = T), split = "C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/1991-2020_raster_climateDT/"), function(x) x[2])), split = ".tif"))
 
 #we extracted the climatic values for each populations from the raster based on their coordinates
 coords<- data.frame(apply(meta_data_pop[,c(5:4)], 2, as.numeric))#we need to have longitude then latitude
-present_climatic_data_Adapon_pop <- data.frame(meta_data_pop$Population,raster::extract(ras.bio, coords))#important to add raster:: because this function is also in tidyr and will not do the same things
-colnames(present_climatic_data_Adapon_pop)<- c("Population",names(ras.bio))
+present_climatic_data_Adapon_pop <- data.frame(meta_data_pop$Population,raster::extract(ras.bio_present, coords))#important to add raster:: because this function is also in tidyr and will not do the same things
+colnames(present_climatic_data_Adapon_pop)<- c("Population",names(ras.bio_present))
 
 #add country info 
 present_climatic_data_Adapon_pop_f <- merge(meta_data_pop[,c(1,2)],present_climatic_data_Adapon_pop, "Population")
@@ -331,18 +333,18 @@ We want to compare these models to assess the differences in predictions. For fu
 The first step is to load the future climatic data for each climatic model
 ```{r load future climatic data}
 #list of the model for the loop
-list_models<- c("GFDL_ESM4","IPSL_CM6A_LR","MPI_ESM1_2_HR","MPI_ESM2_0","UKESM1_0_LL") 
+list_models<- c("GFDL_ESM4","IPSL_CM6A_LR","MPI_ESM1_2_HR","MRI_ESM2_0","UKESM1_0_LL") 
 
 for(x in 1:length(list_models)){
   
   model <- list_models[x]
   #create an R object where all the climatic rasters are
-ras.bio <- stack(list.files(paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/Future_climate/2041_2070_",model,"_ssp370/"), pattern = ".tif$", full.names = T)) 
+ras.bio_future <- stack(list.files(paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/Future_climate/2041_2070_",model,"_ssp370/"), pattern = ".tif$", full.names = T)) 
 #names of the raster (because they are not in the classic order Bio 1, 2 etc they are order by number so bio 1, 10, 11 etc)
-names(ras.bio) <- unlist(strsplit(unlist(lapply(strsplit(list.files(paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/Future_climate/2041_2070_",model,"_ssp370/"), pattern = ".tif$", full.names = T), split = paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/Future_climate/2041_2070_",model,"_ssp370/")), function(x) x[2])), split = ".tif"))
+names(ras.bio_future) <- unlist(strsplit(unlist(lapply(strsplit(list.files(paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/Future_climate/2041_2070_",model,"_ssp370/"), pattern = ".tif$", full.names = T), split = paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/Future_climate/2041_2070_",model,"_ssp370/")), function(x) x[2])), split = ".tif"))
 
-future_climatic_data <- data.frame(meta_data_pop$Population,raster::extract(ras.bio, coords))
-colnames(future_climatic_data)=c("Population",names(ras.bio))
+future_climatic_data <- data.frame(meta_data_pop$Population,raster::extract(ras.bio_future, coords))
+colnames(future_climatic_data)=c("Population",names(ras.bio_future))
 new_colnames<- paste(colnames(future_climatic_data[,-1]),model, sep = "_")
 colnames(future_climatic_data)[-1] <- new_colnames
 
@@ -366,9 +368,9 @@ for(x in 1:length(list_climatic_var)){
   
   #climatic_values_ff <- Future_data_GFDL_ESM4[,x]
   
-  data_set_clim <- data.frame(Population=Future_data_GFDL_ESM4$Population,Country=Future_data_GFDL_ESM4$Country,Future_data_GFDL_ESM4[,pos_clim],Future_data_IPSL_CM6A_LR[,pos_clim],Future_data_MPI_ESM1_2_HR[,pos_clim],Future_data_MPI_ESM2_0[,pos_clim],Future_data_UKESM1_0_LL[,pos_clim])
+  data_set_clim <- data.frame(Population=Future_data_GFDL_ESM4$Population,Country=Future_data_GFDL_ESM4$Country,Future_data_GFDL_ESM4[,pos_clim],Future_data_IPSL_CM6A_LR[,pos_clim],Future_data_MPI_ESM1_2_HR[,pos_clim],Future_data_MRI_ESM2_0[,pos_clim],Future_data_UKESM1_0_LL[,pos_clim])
   
-  colnames(data_set_clim)<- c("Population","Country",paste0(climatic_var,"_GFDL_ESM4"),paste0(climatic_var,"_IPSL_CM6A_LR"),paste0(climatic_var,"_MPI_ESM1_2_HR"),paste0(climatic_var,"_MPI_ESM2_0"),paste0(climatic_var,"_UKESM1_0_LL"))
+  colnames(data_set_clim)<- c("Population","Country",paste0(climatic_var,"_GFDL_ESM4"),paste0(climatic_var,"_IPSL_CM6A_LR"),paste0(climatic_var,"_MPI_ESM1_2_HR"),paste0(climatic_var,"_MRI_ESM2_0"),paste0(climatic_var,"_UKESM1_0_LL"))
   
   assign(paste0(climatic_var,"_future_climatic_data"),data_set_clim)
 }
@@ -395,17 +397,31 @@ data_violin <- gather(dataset,key="dataset",value="Value",-Population,-Country)
 data_violin_f <- data_violin %>%
   mutate(models = gsub("^[^_]+_", "", dataset))
 
-
   # Create scatterplot to compare the bioclimatic variable between the two periods
   plot <- ggplot(data_violin_f, aes(x = models,y= Value)) +
   geom_violin(trim = FALSE) +
-  geom_point(aes(color = data_violin_f$Country), shape = 16, position = position_jitter(seed = 1, width = 0.2)) +
-  labs(colour="Regions",x=var_name,y=paste0("values ","(",unit,")"),title=paste0("Violin Plot of ",var_name," differences across climatic models"))+
-  theme(plot.title = element_text(hjust = 0.5)) +
-     scale_x_discrete(labels = c("label1" = "name1", "label2" = "name2")) 
+  geom_point(aes(color = data_violin_f$Country), shape = 16, position = position_jitter(seed = 1, width = 0.2),size=2) +
+  labs(colour="Country",x=var_name,y=paste0("values ","(",unit,")"),title=paste0("Violin Plot of ",var_name," differences across climatic models"))+
+  theme_classic() +  # Removes the grey background
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+    axis.title.x = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    axis.text.x = element_text(size = 8.3),
+    axis.text.y = element_text(size = 12),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 12),
+    legend.key = element_rect(fill = "transparent", color = NA),
+    panel.grid.major = element_line(color = "grey"),  # Grille principale noire
+    panel.grid.minor = element_line(color = "grey"),  # Grille secondaire noire
+    panel.grid.major.x = element_line(color = "grey"),  # Grille verticale noire
+    panel.grid.major.y = element_line(color = "grey")   # Grille horizontale noire
+  ) +
+     scale_x_discrete(labels = c("label1" = "name1", "label2" = "name2")) +
+    guides(color = guide_legend(override.aes = list(size = 4))) # Increase legend point size
   
 #save
-png(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/climate/future_climatic_data/violin_plot_comp_models/Comparison_",var_name,"between_climatic_models.png"));print(plot)
+pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/climate/future_climatic_data/violin_plot_comp_models/Comparison_",var_name,"between_climatic_models.pdf"));print(plot)
 ;dev.off()
 
 # Print the plot
@@ -413,10 +429,11 @@ png(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/climate/f
 }
 ```
 
+
 We can see that there are some differences between the climatic models, but overall, the values seem quite close. To test if the values are similar, we will calculate a correlation matrix.
 
 ```{r correlation values across climatic models, message=FALSE, warning=FALSE}
-
+list_names <- c("Bio 1","Bio 12","Bio 15","Bio 2","Bio 4","Bio 9")
 for(x in 1:length(list_dataset)){
   df <- get(list_dataset[x])
   
@@ -427,7 +444,7 @@ for(x in 1:length(list_dataset)){
   #title of corrplot
   title <- (paste0("Correlation ",list_dataset[x]))
   
-  
+  name_title <- list_names[x]
   
   #group for each bio var with the values of Bayes factor only 
 corr_bio <- cor(df[, grepl("bio", names(df))]) 
@@ -435,37 +452,16 @@ corr_bio <- cor(df[, grepl("bio", names(df))])
 #name the corr_bio with names_corr
 assign(names_corr,corr_bio)
 
+names_corr
 #plot corrplot
-corr_plot <- corrplot(get(names_corr), method = "number", addrect = 2, col = c("red", "white", "red"), type = "lower", tl.col = "black", tl.cex = 0.6, number.cex = 0.6, title = title,mar=c(0,0,1,0) )
+corr_plot <- corrplot(get(names_corr), method = "number", addrect = 2, col = c("red", "white", "red"), type = "lower", tl.col = "black", tl.cex = 0.8, number.cex = 0.7,mar=c(0,0,1,0),title=paste0("Correlation ",name_title," future climatic data"))
 
 #save
-png(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/climate/future_climatic_data/Correlation/correlation_",list_dataset[x],".png"));corr_plot <- corrplot(get(names_corr), method = "number", addrect = 2, col = c("red", "white", "red"), type = "lower", tl.col = "black", tl.cex = 0.6, number.cex = 0.6, title = title,mar=c(0,0,1,0) );dev.off()
+pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/climate/future_climatic_data/Correlation/correlation_",list_dataset[x],".pdf"));corr_plot <- corrplot(get(names_corr), method = "number", addrect = 2, col = c("red", "white", "red"), type = "lower", tl.col = "black", tl.cex = 0.8, number.cex = 0.7,mar=c(0,0,1,0), title=paste0("Correlation ",name_title," future climatic data"));dev.off()
 }
 ```
 
-The climatic values are very similar across climatic models, except for **BIO 9**, where the **UKESM1-0-LL model** predicts values that are very inconsistent with those predicted by the other models. This serves as a reminder that, in the absence of prior information suggesting one model over the others, we should be cautious when selecting future climatic values. Here, we will use the mean values of the five climatic models as our future values.
-
-```{r mean values across climatic models}
-
-for (x in 1: length(list_dataset)){
-  var <- list_climatic_var[x]
-   dataset <- get(list_dataset[x]) 
-
-df <- dataset %>%
-  mutate(mean_values=rowMeans(dplyr::select(., 3:7)))
-
-df_f <- df[,c(1,2,8)]
-colnames(df_f) <- c("Population","Country",paste0("mean_values_",var))
-
-assign(paste0("df_",var,"_mean"),df_f)
-}
-```
-
-```{r merge in 1 dataframe}
-
-Future_climatic_data_T_adapcon_gentree<- data.frame(Population=df_bio1_mean[,1],Country=df_bio1_mean[,2],Annual_Tc=df_bio1_mean[,3],Diurnal_range_Tc=df_bio2_mean[,3],Tc_Seasonality=df_bio4_mean[,3],Tc_driest_quarter=df_bio9_mean[,3],Annual_P=df_bio12_mean[,3],P_Seasonality=df_bio15_mean[,3])
-```
-
+The climatic values are very similar across climatic models, except for **BIO 9**, where the **UKESM1-0-LL model** predicts values that are very inconsistent with those predicted by the other models. This serves as a reminder that, in the absence of prior information suggesting one model over the others, we should be cautious when selecting future climatic values. Here, we will use the five climatic models as future values to calculate GO and then compare the predictions.
 
 # Standardization of the retained climatic variables
   
@@ -509,35 +505,6 @@ save(center_env_value_new_cli,file="C:/Users/tfrancisco/Documents/Thesis/Data/Sp
 ```
 
 
-We also need to save the climatic data into a raster: 
-```{r data_to_be_used_raster}
-Past_new_6_Climatic_data_df <- data.frame(past_climatic_data_order[,c(1,2)],past_climatic_data_order[,c(3,4,6,10,12,15)])
-
-past_clim_data <- data.frame(merge(meta_data_pop[,c(2,4,5)],Past_new_6_Climatic_data_df[,c(1,3,7,8,4:6)],"Population"))
-# we need to rename colnames for raster
-past_clim_data$Latitude <- as.numeric(past_clim_data$Latitude);past_clim_data$Longitude <- as.numeric(past_clim_data$Longitude)
-Past_clim_data_new <- data.frame(past_clim_data[,c(3,2)],past_clim_data[,c(4:9)])
-
-colnames(Past_clim_data_new) <- c('x', 'y',"bio1", "bio12", "bio15","bio2","bio4","bio9")
-```
-
-
-```{r rasterization past data}
-# create a raster object with the extent of the data
-r_obj <- raster(xmn=min(Past_clim_data_new$x)-0.1, xmx=max(Past_clim_data_new$x)+0.1, ymn=min(Past_clim_data_new$y)-0.1, ymx=max(Past_clim_data_new$y)+0.1, resolution=c(0.01,0.01)) #the resolution is smaller than what we have in meta_data_pop
-
-# use rasterize to create desired raster with the pop and their values
-past_climatic_data_raster <- rasterize(x=Past_clim_data_new[, 1:2], # lon-lat data
-                    y=r_obj, # raster object
-                    field=Past_clim_data_new[, 3:8], # clim var to fill raster with
-                    fun=mean) # aggregate function
-```
-
-```{r save raster past data, include=FALSE}
-save(past_climatic_data_raster,file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Genomic_offset/RDA/Past_climatic_data_raster.Rdata",F=T)
-```
-
-
 ## Present
 
 ```{r present data}
@@ -551,7 +518,7 @@ Present_climatic_data_T_adapcon_gentree_scaled <- data.frame(Present_new_6_Clima
 We need to save the raster for RDA GO
 ```{r save present raster for GO RDA, include=FALSE}
 #raster
-present_climatic_data_raster <- ras.bio
+present_climatic_data_raster <- ras.bio_present
 save(present_climatic_data_raster,file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Genomic_offset/RDA/present_climatic_data_raster.Rdata")
 #dataframe
 write_xlsx(Present_climatic_data_T_adapcon_gentree_scaled ,path="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/validation_GO/climatic_data/Present_climatic_data_T_adapcon_gentree_scaled.xlsx")
@@ -563,32 +530,385 @@ write_xlsx(Present_climatic_data_T_adapcon_gentree_scaled ,path="C:/Users/tfranc
 
 We finally can scale the future climatic data using the mean and sd of the past climatic data. 
 ```{r normalize and save the future data}
-Future_climatic_data_T_adapcon_gentree_scaled <- data.frame(Future_climatic_data_T_adapcon_gentree[,c(1,2)],scale(Future_climatic_data_T_adapcon_gentree[,-c(1,2)], center = center_env_value_new_cli, scale = scale_env_value_new_cli))
-```
 
+for(x in 1:length(list_models)){
+  
+  model <- list_models[x]
+  
+  data <- get(paste0("Future_data_",model))
+  data_final <- data.frame(data[,c(1:3,6:8,4,5)])
+  colnames(data_final) <- c("Population","Country","Annual_Tc","Diurnal_range_Tc","Tc_Seasonality","Tc_driest_quarter","Annual_P","P_Seasonality")
 
-```{r save df future data, include=FALSE}
-#save df raw for GO using RDA because the genomic offset function is doing it using the center and sd values above
-write_xlsx(Future_climatic_data_T_adapcon_gentree,"C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_data/new_selection/Future_climatic_data_T_adapcon_gentree.xlsx")
-save(Future_climatic_data_T_adapcon_gentree,file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_data/new_selection/Future_climatic_data_T_adapcon_gentree.Rdata")
+Future_climatic_data_scaled <- data.frame(data_final[,c(1,2)],scale(data_final[,-c(1,2)], center = center_env_value_new_cli, scale = scale_env_value_new_cli))
+
+assign(paste0("future_climatic_data_",model),data_final)
+assign(paste0("future_climatic_data_scaled_",model),Future_climatic_data_scaled)
+
+#non scaled
+write_xlsx(get(paste0("future_climatic_data_", model)),paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_data/new_selection/future_climatic_data_",model,".xlsx"))
 
 #save scale df
-write_xlsx(Future_climatic_data_T_adapcon_gentree_scaled,"C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_data/new_selection/Future_climatic_data_T_adapcon_gentree_scaled.xlsx")
-save(Future_climatic_data_T_adapcon_gentree_scaled,file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_data/new_selection/Future_climatic_data_T_adapcon_gentree_scaled.Rdata")
-
+write_xlsx(get(paste0("future_climatic_data_scaled_",model)),paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_data/new_selection/future_climatic_data_scaled_",model,".xlsx"))
+save(list=paste0("future_climatic_data_scaled_",model),file=paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_data/new_selection/future_climatic_data_scaled_",model,".Rdata"))
+}
 ```
+
 
 ### Raster format
 
+Now, we can load the folder with raster and create the raster stack with all the climatic variables for each climatic model
+```{r create the file with six rasters and save file}
+
+for(x in 1:length(list_models)){
+  
+  model <- list_models[x]
+
+future_climatic_data_raster <- stack(list.files(paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/Future_climate/2041_2070_",model,"_ssp370/"), pattern = ".tif$", full.names = T)) 
+
+future_climatic_data <- data.frame(meta_data_pop$Population,raster::extract(future_climatic_data_raster, coords))#important to add raster:: because
+#names of the raster (because they are not in the classic order Bio 1, 2 etc they are order by number so bio 1, 10, 11 etc)
+names(future_climatic_data_raster) <- unlist(strsplit(unlist(lapply(strsplit(list.files(paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/Future_climate/2041_2070_",model,"_ssp370/"), pattern = ".tif$", full.names = T), split = paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/Future_climate/2041_2070_",model,"_ssp370/")), function(x) x[2])), split = ".tif"))
+
+assign(paste0("future_climatic_data_raster_",model),future_climatic_data_raster)
+
+#save file
+save(list=paste0("future_climatic_data_raster_",model),file=paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Genomic_offset/RDA/future_climatic_data_raster_",model,".Rdata"),F=T)
+}
+```
+
+
+## LFMM analysis
+
+For the LFMM analysis, we also need to create a data frame with climatic values at the individual level (where individuals of the same population have the same climatic values) because this analysis works at the individual level.
+
+```{r new climatic matrix at individual-level}
+#load meta_data at individual level
+
+climatic_data_indivdual_level_new_selection <- merge(meta_data_vcf[,-2],past_climatic_data_order[,c(1:4,6,10,12,15)],"Population")
+
+climatic_data_indivdual_level_scaled_new_selection <- climatic_data_indivdual_level_new_selection[,-c(1:3)] %>% 
+  scale()
+
+climatic_data_indivdual_level_scaled_new_selection_df <- data.frame(climatic_data_indivdual_level_new_selection[,c(1:3)],climatic_data_indivdual_level_scaled_new_selection)
+
+#rename columns
+colnames(climatic_data_indivdual_level_scaled_new_selection_df) <- c("Population","VCF_ID","Country","Annual_Tc","Diurnal_range_Tc","Tc_Seasonality","Tc_driest_quarter","Annual_P","P_Seasonality")
+```
+
+```{r save LFMM data, include=FALSE}
+write_xlsx(climatic_data_indivdual_level_scaled_new_selection_df,"C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/climatic_data_indivdual_level_scaled_new_selection_df.xlsx")
+save(climatic_data_indivdual_level_scaled_new_selection_df,file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_data/new_selection/climatic_data_indivdual_level_scaled_new_selection_df.Rdata")
+
+```
+
+
+# Comparison of the climatic envelope of *Taxus baccata*: European range vs. sampled population
+
+We will compare the climatic envelope, using the 6 climatic vars retained for the past period, between the 29 populations and the occurrence point of Taxus baccata in Europe. 
+
+## Shapefile 
+
+### Climatic data presence data
+
+Load shapefile presence data
+```{r presence data}
+presence_shp <- st_read("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/shapefiles/presence_point_europe/euforgen.shp")
+```
+
+Coord data
+
+We need to extract the coordinates from the SHP to extract the climatic data using the coordinates from the climatic data raster.  
+```{r coord data}
+
+df_coord_data <- data.frame(Longitude=presence_shp$LONG_WGS84,Latitude=presence_shp$LAT_WGS84)
+```
+
+Extract climatic data
+```{r extract the climatic data}
+#first we need to extract the climatic data
+df_coord_data$Longitude <- as.numeric(df_coord_data$Longitude);df_coord_data$Latitude <- as.numeric(df_coord_data$Latitude)
+
+#raster
+ras.bio <- stack(list.files("C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/1901-1950_raster/", pattern = ".tif$", full.names = T)) 
+#names of the raster (because they are not in the classic order Bio 1, 2 etc they are order by number so bio 1, 10, 11 etc)
+names(ras.bio) <- unlist(strsplit(unlist(lapply(strsplit(list.files("C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/1901-1950_raster/", pattern = ".tif$", full.names = T), split = "C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/1901-1950_raster/"), function(x) x[2])), split = ".tif"))
+
+#we extracted the climatic values for each populations from the raster based on their coordinates
+clim_shp <- data.frame(raster::extract(ras.bio, df_coord_data))#important to add raster:: because this function is also in tidyr and will not do the same things
+colnames(clim_shp)<- c(names(ras.bio))
+
+final_df_presence_shp <- clim_shp[-5,c(2,11,13,17,4,7)]
+
+final_df_presence_shp$group <- "range-wide"
+```
+
+
+### Combined of data set and scaling
+
+```{r climatic data 29pop}
+Past_clim_data_Europe_pop
+#Past_clim_data_Europe_pop$group <- c("I","CH","SLO","N","E","E","E","UK","I","I","SLO","SK","CH","CH","GR","GR","GR","D","E","UK","F","S","F","E","SLO","I","BIH","CH","UK")
+Past_clim_data_Europe_pop$group <- Past_clim_data_Europe_pop$Country
+```
+
+```{r combined df}
+df_combined_clim <- rbind(final_df_presence_shp,Past_clim_data_Europe_pop[,-c(1,2)])
+
+df_combined_clim_scaled <- df_combined_clim %>% dplyr::mutate(across(where(is.numeric), ~scale(.)))
+```
+
+
+### PCA
+```{r PCA}
+env_PCA <- PCA(df_combined_clim_scaled[,-c(7)], scale.unit = T,
+        ncp = ncol(df_combined_clim_scaled[,-c(7)]),graph=F)
+
+eigvalues<-round(env_PCA$eig,2);eigvalues
+barplot(eigvalues[,2], xlab="Axis",ylab="Explained variance", main= "Scatterplot")
+```
+
+
+Add name of the 29 pop
+```{r plot}
+meta_data_pop$pop_abbrev <- c("VIS","BAU","SDF","PAT","CHO","VOU","OLY","ANC","PDT","UMB","VAL","BRA","HAR","GOR","BOM","UNS","BUJA","BUJG","CAR","RAS","SUE","SAV","BLI","HHR","JUR","WAL","CED","RWM","YEW")
+
+PC_scores<-data.frame(env_PCA$ind$coord[,c(1,2)],Group=df_combined_clim_scaled$group)
+explained_var <- round(env_PCA$eig[,2],1)
+
+group_palette <- c("range-wide"="grey","Bosnia"="orangered3", "France"="gold2","Germany"= "darkorchid3", "Greece"="navyblue", "Italy"="turquoise2", "Norway"="green3", "Slovakia"="blue", "Slovenia"="red", "Spain"="black", "Sweden"="pink", "Switzerland"="darkorange", "UK"="darkgreen")
+
+data_name <- cbind(meta_data_pop[,c(1,2,7)],PC_scores[c(1016:1044),])
+
+loadings <- as.data.frame(env_PCA$var$coord[, c(1, 2)]) # Loadings for PC1 and PC2
+colnames(loadings) <- c("Dim.1", "Dim.2") # Rename columns
+loadings$Variable <- rownames(loadings)  # Add variable names
+
+PCA_plot <- ggplot(PC_scores, aes(x = Dim.1, y = Dim.2, col = Group)) +
+  geom_point(size = 2.5, alpha = 0.5) + 
+  scale_color_manual(name = "Group", values = group_palette) + 
+  xlab(paste0("PC 1 (", explained_var[1], "%)")) + 
+  ylab(paste0("PC 2 (", explained_var[2], "%)")) +
+  ggtitle("Climatic PCA") +
+  geom_segment(data = loadings, aes(x = 0, y = 0, xend = Dim.1*5, yend = Dim.2*5),
+               arrow = arrow(length = unit(0.2, "cm")), color = "black", size = 0.5) + 
+  geom_text(data = loadings, aes(x = Dim.1, y = Dim.2, label = Variable), 
+            color = "black", hjust = 0.5, vjust = -0.5, size = 3.5) +
+  guides(color = guide_legend(title = "Group")) +
+  theme_bw(base_size = 11) +
+  theme(legend.position = "right", 
+        panel.grid = element_blank(), 
+        strip.text = element_text(size = 11), 
+        plot.title = element_text(hjust = 0.5, color = "black", face = "italic"))
+
+print(PCA_plot)
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/climate/Comparison_climate/PCA_presencepointeurope_pop_color.pdf");print(PCA_plot);dev.off()
+
+
+PCA_plot <- ggplot(PC_scores, aes(x = Dim.1, y = Dim.2, col = Group)) +
+  geom_point(size = 2, alpha = 0.5) + 
+  scale_color_manual(name = "Group", values = group_palette) + 
+  xlab(paste0("PC 1 (", explained_var[1], "%)")) + 
+  ylab(paste0("PC 2 (", explained_var[2], "%)")) +
+  ggtitle("Climatic PCA") +
+  geom_segment(data = loadings, aes(x = 0, y = 0, xend = Dim.1*5, yend = Dim.2*5),
+               arrow = arrow(length = unit(0.2, "cm")), color = "darkgreen", size = 0.5) + 
+  geom_text(data = loadings, aes(x = Dim.1, y = Dim.2, label = Variable), 
+            color = "darkgreen", hjust = 0.5, vjust = -0.5, size = 3.5) +
+  geom_text(data=data_name, aes(x = Dim.1, y = Dim.2-0.2, label= pop_abbrev), color = "black",size = 3) +
+  guides(color = guide_legend(title = "Group")) +
+  theme_bw(base_size = 11) +
+  theme(legend.position = "right", 
+        panel.grid = element_blank(), 
+        strip.text = element_text(size = 11), 
+        plot.title = element_text(hjust = 0.5, color = "black", face = "italic"))
+
+print(PCA_plot)
+
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/climate/Comparison_climate/PCA_presencepointeurope_pop_name.pdf");print(PCA_plot);dev.off()
+
+```
+
+## CG+SNP+SSR populations
+
+One problem with the EUFORGEN map is that the presence data include planted populations, especially in central France, and also planted populations outside the distribution of Taxus, such as in the north of the UK. In order to evaluate more precise presence data, we will use the coordinates of the 29 genotypes for SNP populations + the 26 CG populations and the 242 populations sampled for SSR and compare them with the 29 populations.  
+
+### Gather the data
+```{r combined CG SNP SSR}
+#Spain data
+load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_data/Spain_pop/Past_clim_data_Spain_pop.Rdata")
+
+#UE data
+load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_data/new_selection/Past_clim_data_Europe_pop.Rdata")
+
+df_2dataset <- rbind(Past_clim_data_Europe_pop[,c(1,3:8)],Past_clim_data_Spain_pop[,c(1,3:8)])
+```
+
+### Extract climatic data for SSR pop
+
+```{r SSR pop}
+SRR_pop_data <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/Meta_data_pop_taxus_migration.csv",h=T,sep=";",dec=",")
+```
+
+```{r coord data SRR}
+df_coord_data_SSR <- data.frame(Longitude=SRR_pop_data$LONG,Latitude=SRR_pop_data$LAT)
+```
+
+Extract climatic data
+
+```{r extract the climatic data SSR}
+#first we need to extract the climatic data
+df_coord_data_SSR$Longitude <- as.numeric(df_coord_data_SSR$Longitude);df_coord_data_SSR$Latitude <- as.numeric(df_coord_data_SSR$Latitude)
+
+#raster
+ras.bio <- stack(list.files("C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/1901-1950_raster/", pattern = ".tif$", full.names = T)) 
+#names of the raster (because they are not in the classic order Bio 1, 2 etc they are order by number so bio 1, 10, 11 etc)
+names(ras.bio) <- unlist(strsplit(unlist(lapply(strsplit(list.files("C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/1901-1950_raster/", pattern = ".tif$", full.names = T), split = "C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/1901-1950_raster/"), function(x) x[2])), split = ".tif"))
+
+#we extracted the climatic values for each populations from the raster based on their coordinates
+clim_SSR <- data.frame(raster::extract(ras.bio, df_coord_data_SSR))#important to add raster:: because this function is also in tidyr and will not do the same things
+colnames(clim_SSR)<- c(names(ras.bio))
+
+final_df_presence_SSR <- clim_SSR[-5,c(2,11,13,17,4,7)]
+```
+
+Gather with other dataframe
+```{r gather three df}
+df_3dataset <- rbind(df_2dataset[,-1],final_df_presence_SSR)
+
+df_3dataset$group <- "range-wide"
+
+Past_clim_data_Europe_pop$group <- Past_clim_data_Europe_pop$Country
+
+df_combined_clim <- rbind(df_3dataset,Past_clim_data_Europe_pop[,-c(1,2)])
+
+df_combined_clim_scaled_reduce <- df_combined_clim %>% dplyr::mutate(across(where(is.numeric), ~scale(.)))
+```
+
+```{r PCA 3df}
+env_PCA_reduce <- PCA(df_combined_clim_scaled_reduce[,-c(7)], scale.unit = T,
+        ncp = ncol(df_combined_clim_scaled_reduce[,-c(7)]),graph=F)
+
+eigvalues<-round(env_PCA_reduce$eig,2);eigvalues
+barplot(eigvalues[,2], xlab="Axis",ylab="Explained variance", main= "Scatterplot")
+```
+```{r}
+meta_data_pop_order <- meta_data_pop[order(meta_data_pop$Population),]
+
+#meta_data_poppop_abbrev <- c("VIS","BAU","SDF","PAT","CHO","VOU","OLY","ANC","PDT","UMB","VAL","BRA","HAR","GOR","BOM","UNS","BUJA","BUJG","CAR","RAS","SUE","SAV","BLI","HHR","JUR","WAL","CED","RWM","YEW")
+
+meta_data_pop_order$pop_abbrev <- c("ANC","BLI","BOM","BRA","BUJA","BUJG","CAR","CED","PDT","UMB","GOR","HAR","HHR","JUR","CHO","OLY","VOU","PAT","RAS","RWM","BAU","SAV","SDF","SUE","UNS","VAL","VIS","WAL","YEW")
+
+PC_scores<-data.frame(env_PCA_reduce$ind$coord[,c(1,2)],Group=df_combined_clim_scaled_reduce$group)
+explained_var <- round(env_PCA_reduce$eig[,2],1)
+
+group_palette <- c("range-wide"="grey","Bosnia"="orangered3", "France"="gold2","Germany"= "darkorchid3", "Greece"="navyblue", "Italy"="turquoise2", "Norway"="green3", "Slovakia"="blue", "Slovenia"="red", "Spain"="black", "Sweden"="pink", "Switzerland"="darkorange", "UK"="darkgreen")
+
+data_name <- cbind(meta_data_pop_order[,c(1,2,7)],PC_scores[c(305:333),])
+
+loadings <- as.data.frame(env_PCA_reduce$var$coord[, c(1, 2)]) # Loadings for PC1 and PC2
+colnames(loadings) <- c("Dim.1", "Dim.2") # Rename columns
+loadings$Variable <- rownames(loadings)  # Add variable names
+
+PCA_plot <- ggplot(PC_scores, aes(x = Dim.1, y = Dim.2, col = Group)) +
+  geom_point(size = 2.5, alpha = 0.5) + 
+  scale_color_manual(name = "Group", values = group_palette) + 
+  xlab(paste0("PC 1 (", explained_var[1], "%)")) + 
+  ylab(paste0("PC 2 (", explained_var[2], "%)")) +
+  ggtitle("Climatic PCA") +
+  geom_segment(data = loadings, aes(x = 0, y = 0, xend = Dim.1*5, yend = Dim.2*5),
+               arrow = arrow(length = unit(0.2, "cm")), color = "black", size = 0.5) + 
+  geom_text(data = loadings, aes(x = Dim.1, y = Dim.2, label = Variable), 
+            color = "black", hjust = 0.5, vjust = -0.5, size = 3.5) +
+  guides(color = guide_legend(title = "Group")) +
+  theme_bw(base_size = 11) +
+  theme(legend.position = "right", 
+        panel.grid = element_blank(), 
+        strip.text = element_text(size = 11), 
+        plot.title = element_text(hjust = 0.5, color = "black", face = "italic"))
+
+print(PCA_plot)
+#pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/climate/Comparison_climate/PCA_presencepointeurope_pop_color.pdf");print(PCA_plot);dev.off()
+
+PCA_plot <- ggplot(PC_scores, aes(x = Dim.1, y = Dim.2, col = Group)) +
+  geom_point(size = 2, alpha = 0.5) + 
+  scale_color_manual(name = "Group", values = group_palette) + 
+  xlab(paste0("PC 1 (", explained_var[1], "%)")) + 
+  ylab(paste0("PC 2 (", explained_var[2], "%)")) +
+  ggtitle("Climatic PCA") +
+  #geom_segment(data = loadings, aes(x = 0, y = 0, xend = Dim.1*5, yend = Dim.2*5),
+               #arrow = arrow(length = unit(0.2, "cm")), color = "darkgreen", size = 0.5) + 
+  #geom_text(data = loadings, aes(x = Dim.1, y = Dim.2, label = Variable), 
+            #color = "darkgreen", hjust = 0.5, vjust = -0.5, size = 3.5) +
+  geom_text(data=data_name, aes(x = Dim.1, y = Dim.2-0.2, label= pop_abbrev), color = "black",size = 3) +
+  guides(color = guide_legend(title = "Group")) +
+  theme_bw(base_size = 11) +
+  theme(legend.position = "right", 
+        panel.grid = element_blank(), 
+        strip.text = element_text(size = 11), 
+        plot.title = element_text(hjust = 0.5, color = "black", face = "italic"))
+
+print(PCA_plot)
+
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/climate/Comparison_climate/PCA_reducenumberpopspacetosampledpop.pdf");print(PCA_plot);dev.off()
+```
+
+**What is below is a draft for future climatic data that might be useful**
+
+```{r data_to_be_used_raster future, eval=FALSE, include=FALSE}
+Future_clim_data <- data.frame(merge(meta_data_pop[,c(2,4,5)],Future_climatic_data_T_adapcon_gentree[,c(1,3,7,8,4:6)],"Population"))
+# we need to rename colnames for raster
+Future_clim_data$Latitude <- as.numeric(Future_clim_data$Latitude);Future_clim_data$Longitude <- as.numeric(Future_clim_data$Longitude)
+Future_clim_data_new <- data.frame(Future_clim_data[,c(3,2)],Future_clim_data[,c(4:9)])
+
+colnames(Future_clim_data_new) <- c('x', 'y',"bio1", "bio12", "bio15","bio2","bio4","bio9")
+```
+
+```{r rasterization, eval=FALSE, include=FALSE}
+# create a raster object with the extent of the data
+r_obj <- raster(xmn=min(Future_clim_data_new$x)-0.1, xmx=max(Future_clim_data_new$x)+0.1, ymn=min(Future_clim_data_new$y)-0.1, ymx=max(Future_clim_data_new$y)+0.1, resolution=c(0.01,0.01)) #the resolution is smaller than what we have in meta_data_pop
+
+# use rasterize to create desired raster with the pop and their values
+future_climatic_data_raster <- rasterize(x=Future_clim_data_new[, 1:2], # lon-lat data
+                    y=r_obj, # raster object
+                    field=Future_clim_data_new[, 3:8], # clim var to fill raster with
+                    fun=mean) # aggregate function
+```
+
+```{r save raster futut data, eval=FALSE, include=FALSE}
+save(future_climatic_data_raster,file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Genomic_offset/RDA/future_climatic_data_raster.Rdata",F=T)
+```
+
+Mean values future climatic data
+```{r mean values across climatic models, eval=FALSE, include=FALSE}
+
+for (x in 1: length(list_dataset)){
+  var <- list_climatic_var[x]
+   dataset <- get(list_dataset[x]) 
+
+df <- dataset %>%
+  mutate(mean_values=rowMeans(dplyr::select(., 3:7)))
+
+df_f <- df[,c(1,2,8)]
+colnames(df_f) <- c("Population","Country",paste0("mean_values_",var))
+
+assign(paste0("df_",var,"_mean"),df_f)
+}
+```
+
+```{r merge in 1 dataframe, eval=FALSE, include=FALSE}
+
+Future_climatic_data_T_adapcon_gentree<- data.frame(Population=df_bio1_mean[,1],Country=df_bio1_mean[,2],Annual_Tc=df_bio1_mean[,3],Diurnal_range_Tc=df_bio2_mean[,3],Tc_Seasonality=df_bio4_mean[,3],Tc_driest_quarter=df_bio9_mean[,3],Annual_P=df_bio12_mean[,3],P_Seasonality=df_bio15_mean[,3])
+```
+
 The raster needs to be the mean value of the 5 climatic models 
-```{r create 1 list for each bio from each models, eval=F, echo=T}
+```{r create 1 list for each bio from each models, eval=FALSE, include=FALSE}
 library(raster)
 
 # List of climatic variables
 list_climatic_var <- c("bio1", "bio2","bio4", "bio9","bio12","bio15")  # Add more variables as needed
 
 # List of climatic models
-list_models <- c("GFDL_ESM4", "IPSL_CM6A_LR", "MPI_ESM1_2_HR", "MPI_ESM2_0", "UKESM1_0_LL")
+list_models <- c("GFDL_ESM4", "IPSL_CM6A_LR", "MPI_ESM1_2_HR", "MRI_ESM2_0", "UKESM1_0_LL")
 
 # Create empty lists to store rasters for each variable
 bio1_rasters <- list()
@@ -626,7 +946,7 @@ for (var_clim in list_climatic_var) {
 
 ```
 
-```{r calculate mean raster, eval=F, echo=T}
+```{r calculate mean raster, eval=FALSE, include=FALSE}
 
 calculate_mean_raster <- function(raster_list) {
   raster_stack <- stack(raster_list)
@@ -647,79 +967,10 @@ assign(name_file_use,mean_bio)
 }
 ```
 
-```{r save raster mean file, eval=F, echo=T}
+```{r save raster mean file, eval=FALSE, include=FALSE}
 for(x in 1:length(name_file)){
   var <- name_file[x]
   writeRaster(get(var), paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/Mean_future_raster/",var), format="GTiff")
 }
 ```
-
-Now, we can load the folder with raster and create the raster stack with all the climatic variables
-
-```{r create the file with six rasters and save file}
-future_climatic_data_raster <- stack(list.files(paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/Mean_future_raster/"), pattern = ".tif$", full.names = T)) 
-
-past_climatic_data_raster <- data.frame(meta_data_pop$Population,raster::extract(future_climatic_data_raster, coords))#important to add raster:: because
-#names of the raster (because they are not in the classic order Bio 1, 2 etc they are order by number so bio 1, 10, 11 etc)
-names(future_climatic_data_raster) <- unlist(strsplit(unlist(lapply(strsplit(list.files(paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/Mean_future_raster/"), pattern = ".tif$", full.names = T), split = paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Climatic/Mean_future_raster/")), function(x) x[2])), split = ".tif"))
-
-#save file
-save(future_climatic_data_raster,file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Genomic_offset/RDA/future_climatic_data_raster.Rdata",F=T)
-```
-
-
-## LFMM analysis
-
-For the LFMM analysis, we also need to create a data frame with climatic values at the individual level (where individuals of the same population have the same climatic values) because this analysis works at the individual level.
-
-```{r new climatic matrix at individual-level}
-#load meta_data at individual level
-
-climatic_data_indivdual_level_new_selection <- merge(meta_data_vcf[,-2],past_climatic_data_order[,c(1:4,6,10,12,15)],"Population")
-
-climatic_data_indivdual_level_scaled_new_selection <- climatic_data_indivdual_level_new_selection[,-c(1:3)] %>% 
-  scale()
-
-climatic_data_indivdual_level_scaled_new_selection_df <- data.frame(climatic_data_indivdual_level_new_selection[,c(1:3)],climatic_data_indivdual_level_scaled_new_selection)
-
-#rename columns
-colnames(climatic_data_indivdual_level_scaled_new_selection_df) <- c("Population","VCF_ID","Country","Annual_Tc","Diurnal_range_Tc","Tc_Seasonality","Tc_driest_quarter","Annual_P","P_Seasonality")
-```
-
-```{r save LFMM data, include=FALSE}
-write_xlsx(climatic_data_indivdual_level_scaled_new_selection_df,"C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/climatic_data_indivdual_level_scaled_new_selection_df.xlsx")
-save(climatic_data_indivdual_level_scaled_new_selection_df,file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_data/new_selection/climatic_data_indivdual_level_scaled_new_selection_df.Rdata")
-
-```
-
-
-
-
-
-**What is below is a draft for future climatic data that might be usefull**
-
-```{r data_to_be_used_raster future, eval=FALSE, include=FALSE}
-Future_clim_data <- data.frame(merge(meta_data_pop[,c(2,4,5)],Future_climatic_data_T_adapcon_gentree[,c(1,3,7,8,4:6)],"Population"))
-# we need to rename colnames for raster
-Future_clim_data$Latitude <- as.numeric(Future_clim_data$Latitude);Future_clim_data$Longitude <- as.numeric(Future_clim_data$Longitude)
-Future_clim_data_new <- data.frame(Future_clim_data[,c(3,2)],Future_clim_data[,c(4:9)])
-
-colnames(Future_clim_data_new) <- c('x', 'y',"bio1", "bio12", "bio15","bio2","bio4","bio9")
-```
-
-```{r rasterization, eval=FALSE, include=FALSE}
-# create a raster object with the extent of the data
-r_obj <- raster(xmn=min(Future_clim_data_new$x)-0.1, xmx=max(Future_clim_data_new$x)+0.1, ymn=min(Future_clim_data_new$y)-0.1, ymx=max(Future_clim_data_new$y)+0.1, resolution=c(0.01,0.01)) #the resolution is smaller than what we have in meta_data_pop
-
-# use rasterize to create desired raster with the pop and their values
-future_climatic_data_raster <- rasterize(x=Future_clim_data_new[, 1:2], # lon-lat data
-                    y=r_obj, # raster object
-                    field=Future_clim_data_new[, 3:8], # clim var to fill raster with
-                    fun=mean) # aggregate function
-```
-
-```{r save raster futut data, eval=FALSE, include=FALSE}
-save(future_climatic_data_raster,file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Genomic_offset/RDA/future_climatic_data_raster.Rdata",F=T)
-```
-
 

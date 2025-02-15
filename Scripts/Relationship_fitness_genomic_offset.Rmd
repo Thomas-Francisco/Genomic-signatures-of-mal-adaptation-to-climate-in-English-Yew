@@ -29,6 +29,7 @@ library(corrplot)
 library(gridExtra)
 library(stringr)
 library(purrr)
+library(reshape2)
 ```
 
 # Introduction
@@ -136,7 +137,6 @@ df_leafthickness_final <- df_leafthickness %>%
 We investigated the correlation of the phenotypic traits of populations: 
 
 ```{r correlation matrix data}
-
 colnames(df_growth_final) <- c("Population","Growth")
 colnames(df_growth_pheno_final) <- c("Population","Growth_pheno")
 colnames(df_repro_pheno_final) <- c("Population","Repro_pheno")
@@ -152,6 +152,10 @@ merged_df <- df_growth_final %>%
 correlation_phenotypic_traits <- cor(merged_df[,-1], use="pairwise.complete.obs")
 
 corrplot(correlation_phenotypic_traits, method = "number", addrect = 2, col = c("darkorange","darkred"), type = "lower", tl.col = "black", tl.cex = 0.6, number.cex = 0.6)
+```
+
+```{r save corrplot}
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/figures/Correlation/correlation_phenotypic_traits_BLUPs.pdf");corrplot(correlation_phenotypic_traits, method = "number", addrect = 2, col = c("darkorange","darkred"), type = "lower", tl.col = "black", tl.cex = 0.6, number.cex = 0.6);dev.off()
 ```
 
 We can see that the phenotypic traits do not seem to be highly related, as the correlations are quite low. This can indicate that they are responding to different selective pressures? Trade-off? Also, does that mean that they provide complementary information about fitness? 
@@ -189,7 +193,7 @@ final_tot_standardized_traits <- reduce(list(df_standardized_growth[,-2], df_sta
 ```{r composite fitness calculation}
 Trait_calculation <- final_tot_standardized_traits %>%
   rowwise() %>%
-  mutate(
+  dplyr::mutate(
     # Calculate the sum of standardized traits, ignoring NAs
     valid_traits_sum = sum(c_across(ends_with("_standardized")), na.rm = TRUE),
     
@@ -215,7 +219,7 @@ df_composite_fitness <- data.frame(Population=Trait_calculation[,1],Fitness_inde
 We loaded the genomic offset predictions for the 2 genomic offset methods: 
 ```{r Load GO predictions}
 #RDA standard GO
-list_RDA_standard <- c("all","random","random_same_AF","LC","CG")
+list_RDA_standard <- c("all","random","random_same_AF","LC","CG","random_AF_V2","all_outliers")
 list_period <- c("CG2012","CG2021")
 for(i in 1: length(list_period)){
   
@@ -230,7 +234,7 @@ for(x in 1:length(list_RDA_standard)){
 }
 
 #GF GO
-list_GF_standard <- c("all","random","random_same_AF","LC","CG")
+list_GF_standard <- c("all","random","random_same_AF","LC","CG","random_AF_V2","all_outliers")
 list_period <- c("2012","2021")
 for(i in 1: length(list_period)){
   
@@ -248,7 +252,7 @@ for(x in 1:length(list_GF_standard)){
 
 We can investigate the correlation between the predictions across methods and models: 
 ```{r correlation GO predictions}
-df_GO <- data.frame(RDA_all=GO_RDA_all_CG2012_Taxus$GO_all_CG2012,RDA_ran=GO_RDA_random_CG2012_Taxus$GO_random_CG2012,RDA_rand_AF=GO_RDA_random_same_AF_CG2012_Taxus$GO_random_same_AF_CG2012,RDA_LC=GO_RDA_LC_CG2012_Taxus$GO_LC_CG2012,RDA_CG=GO_RDA_CG_CG2012_Taxus$GO_CG_CG2012,GF_ran=GO_standard_GF_random_2012$genomic_offset_GF_random,GF_ran_AF=GO_standard_GF_random_same_AF_2012$genomic_offset_GF_random_same_AF,GF_LC=GO_standard_GF_LC_2012$genomic_offset_GF_LC,GF_CG=GO_standard_GF_CG_2012$genomic_offset_GF_CG)
+df_GO <- data.frame(RDA_all=GO_RDA_all_CG2012_Taxus$GO_all_CG2012,RDA_ran=GO_RDA_random_CG2012_Taxus$GO_random_CG2012,RDA_rand_AF=GO_RDA_random_same_AF_CG2012_Taxus$GO_random_same_AF_CG2012,RDA_LC=GO_RDA_LC_CG2012_Taxus$GO_LC_CG2012,RDA_CG=GO_RDA_CG_CG2012_Taxus$GO_CG_CG2012,RDA_ran_AF_V2=GO_RDA_random_AF_V2_CG2012_Taxus$GO_random_AF_V2_CG2012,RDA_all_outliers=GO_RDA_all_outliers_CG2012_Taxus$GO_all_outliers_CG2012,GF_ran=GO_standard_GF_random_2012$genomic_offset_GF_random,GF_ran_AF=GO_standard_GF_random_same_AF_2012$genomic_offset_GF_random_same_AF,GF_LC=GO_standard_GF_LC_2012$genomic_offset_GF_LC,GF_CG=GO_standard_GF_CG_2012$genomic_offset_GF_CG,GF_ran_AF_V2=GO_standard_GF_random_AF_V2_2012$genomic_offset_GF_random_AF_V2,GF_all_outliers=GO_standard_GF_all_outliers_2012$genomic_offset_GF_all_outliers)
 
 df <- cor(df_GO)
 ggcorrplot(df, hc.order = F, type = "lower", lab = TRUE, title = "Correlation Matrix between Genomic Offsets across models")
@@ -266,25 +270,25 @@ First, we can investigate whether there is a correlation between fitness values 
 ```{r Pearson correlation}
 # List of RDA genomic offsets for 2012 and 2021
 list_GO_2012_RDA <- c("GO_RDA_all_CG2012_Taxus","GO_RDA_random_CG2012_Taxus", "GO_RDA_random_same_AF_CG2012_Taxus", 
-                      "GO_RDA_LC_CG2012_Taxus")
+                      "GO_RDA_LC_CG2012_Taxus","GO_RDA_random_AF_V2_CG2012_Taxus","GO_RDA_all_outliers_CG2012_Taxus")
 list_GO_2021_RDA <- c("GO_RDA_all_CG2021_Taxus","GO_RDA_random_CG2021_Taxus", "GO_RDA_random_same_AF_CG2021_Taxus", 
-                      "GO_RDA_LC_CG2021_Taxus")
+                      "GO_RDA_LC_CG2021_Taxus","GO_RDA_random_AF_V2_CG2021_Taxus","GO_RDA_all_outliers_CG2021_Taxus")
 
 # List of Gradient Forest genomic offsets for 2012 and 2021
 list_GO_2012_GF <- c("GO_standard_GF_all_2012","GO_standard_GF_random_2012", "GO_standard_GF_random_same_AF_2012", 
-                     "GO_standard_GF_LC_2012")
+                     "GO_standard_GF_LC_2012","GO_standard_GF_random_AF_V2_2012","GO_standard_GF_all_outliers_2012")
 list_GO_2021_GF <- c("GO_standard_GF_all_2021","GO_standard_GF_random_2021", "GO_standard_GF_random_same_AF_2021", 
-                     "GO_standard_GF_LC_2021")
+                     "GO_standard_GF_LC_2021","GO_standard_GF_random_AF_V2_2021","GO_standard_GF_all_outliers_2021")
 
 # Combine lists into one for easier processing
 list_GO_2012 <- c(list_GO_2012_RDA, list_GO_2012_GF)
 list_GO_2021 <- c(list_GO_2021_RDA, list_GO_2021_GF)
 
 # Corresponding methods and models
-list_method <- c(rep("RDA", 4), rep("GF", 4))  # 4 RDA models and 4 GF models
+list_method <- c(rep("RDA", 6), rep("GF", 6))  # 4 RDA models and 4 GF models
 
 list_model <- c("all","random", "random_same_AF", "LC", "all","random", "random_same_AF", "LC")
-list_model <- c("all","random", "random_same_AF", "outlier", "all","random", "random_same_AF", "outlier")
+list_model <- c("all","random", "random_same_AF", "outlier","random_same_AF_V2","all_outliers", "all","random", "random_same_AF", "outlier","random_same_AF_V2","all_outliers")
 
 # Traits considered
 #list_traits <- c("growth","growth_pheno","repro_pheno","leafthickness","LMA","StomDens","D13C")
@@ -300,7 +304,7 @@ correlation_df <- data.frame(
 )
 
 # Loop over each Genomic Offset for both RDA and GF models
-for(i in 1:8) {  # Now we have 8 models (4 RDA + 4 GF)
+for(i in 1:12) {  # Now we have 8 models (4 RDA + 4 GF)
   GO_pred_2012 <- get(list_GO_2012[i])
   GO_pred_2021 <- get(list_GO_2021[i])
   method <- list_method[i]
@@ -362,6 +366,156 @@ pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/V
 ```
 
 
+We want to plot the correlation results in a format similar to Camus et al 2024. 
+```{r correlation figure paper}
+# Reshape the correlation matrix for ggplot
+cor_long <- melt(cor_matrix_fitness_index, varnames = c("Trait", "Method_Model"), value.name = "Correlation")
+
+#we remove the random correlation
+cor_long_reduce <- cor_long[-c(6:10,26:30),]
+
+cor_long_reduce <- cor_long
+#change the name of the random same AF correlation to simply random 
+cor_long_reduce$Method_Model[cor_long_reduce$Method_Model == "RDA_random_same_AF"] <- "RDA_random"
+cor_long_reduce$Method_Model[cor_long_reduce$Method_Model == "GF_random_same_AF"] <- "GF_random"
+
+# Capitalize the first letter of each trait name
+cor_long_reduce$Trait <- str_to_title(cor_long_reduce$Trait)
+ 
+
+# Separate 'Method_Model' back into 'Method' and 'Model' for better grouping
+#cor_long_reduce <- cor_long_reduce %>%
+ # tidyr::separate(Method_Model, into = c("Method", "Model"), sep = "_")
+
+cor_long_reduce <- cor_long_reduce %>%
+  tidyr::separate(Method_Model, into = c("Method", "Model"), sep = "_",extra="merge")
+
+cor_long_reduce$Trait[cor_long_reduce$Trait == "Growth_pheno"] <- "Growth Phenology"
+cor_long_reduce$Trait[cor_long_reduce$Trait == "Repro_pheno"] <- "Reproductive Phenology"
+cor_long_reduce$Trait[cor_long_reduce$Trait == "Leafthickness"] <- "Leaf Thickness"
+cor_long_reduce$Trait[cor_long_reduce$Trait == "Composite_fitness"] <- "Composite index"
+
+
+#Change the order of the model and pheno in the plots
+order_model <- c("outlier", "random", "all")
+cor_long_reduce$Model <- factor(cor_long_reduce$Model, levels = order_model)
+
+order_pheno <- c("Growth", "Growth Phenology", "Reproductive Phenology","Leaf Thickness","Composite index")
+cor_long_reduce$Trait <- factor(cor_long_reduce$Trait, levels = order_pheno)
+
+
+
+
+# Plot using ggplot2
+plot <- ggplot(cor_long_reduce, aes(x = Model, y = Correlation, color = Method, group = Method)) +
+  geom_point(size=3.5) +
+  facet_wrap(~ Trait, scales = "fixed", nrow = 2) +
+  scale_y_reverse(
+    breaks = seq(0, -0.6, by = -0.1), # Custom y-axis breaks
+    limits = c(0, -0.6)               # Ensure consistent limits across facets
+  ) +
+  labs(
+    x = "SNP set",
+    y = "Pearson Correlation"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom"
+  ) +
+  theme_bw(base_size = 11)
+
+plot
+
+#pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Final_figures/Validation/Graph_nice_correlation_GO_fitness_v2.pdf");print(plot);dev.off()
+```
+
+```{r correlation figure paper}
+# Reshape the correlation matrix for ggplot
+cor_long <- melt(cor_matrix_fitness_index, varnames = c("Trait", "Method_Model"), value.name = "Correlation")
+
+#we remove the random correlation
+#cor_long_reduce <- cor_long[-c(6:10,26:30),]
+
+cor_long_reduce <- cor_long
+#change the name of the random same AF correlation to simply random 
+cor_long_reduce$Method_Model[cor_long_reduce$Method_Model == "RDA_random_same_AF"] <- "RDA_AF"
+cor_long_reduce$Method_Model[cor_long_reduce$Method_Model == "GF_random_same_AF"] <- "GF_AF"
+cor_long_reduce$Method_Model[cor_long_reduce$Method_Model == "RDA_random_same_AF_V2"] <- "RDA_AF2"
+cor_long_reduce$Method_Model[cor_long_reduce$Method_Model == "GF_random_same_AF_V2"] <- "GF_AF2"
+cor_long_reduce$Method_Model[cor_long_reduce$Method_Model == "RDA_outlier"] <- "RDA_out"
+cor_long_reduce$Method_Model[cor_long_reduce$Method_Model == "GF_outlier"] <- "GF_out"
+cor_long_reduce$Method_Model[cor_long_reduce$Method_Model == "RDA_random"] <- "RDA_r"
+cor_long_reduce$Method_Model[cor_long_reduce$Method_Model == "GF_random"] <- "GF_r"
+cor_long_reduce$Method_Model[cor_long_reduce$Method_Model == "RDA_all_outliers"] <- "RDA_alout"
+cor_long_reduce$Method_Model[cor_long_reduce$Method_Model == "GF_all_outliers"] <- "GF_alout"
+
+cor_long_reduce <- cor_long_reduce %>%
+  mutate(Method_Model = recode(Method_Model,
+    "RDA_random_same_AF" = "RDA_AF",
+    "GF_random_same_AF" = "GF_AF",
+    "RDA_random_same_AF_V2" = "RDA_AF2",
+    "GF_random_same_AF_V2" = "GF_AF2",
+    "RDA_outlier" = "RDA_out",
+    "GF_outlier" = "GF_out",
+    "RDA_random" = "RDA_r",
+    "GF_random" = "GF_r",
+    "RDA_all_outliers" = "RDA_alout",
+    "GF_all_outliers" = "GF_alout"
+  ))
+
+# Capitalize the first letter of each trait name
+cor_long_reduce$Trait <- str_to_title(cor_long_reduce$Trait)
+ 
+
+# Separate 'Method_Model' back into 'Method' and 'Model' for better grouping
+#cor_long_reduce <- cor_long_reduce %>%
+ # tidyr::separate(Method_Model, into = c("Method", "Model"), sep = "_")
+
+cor_long_reduce <- cor_long_reduce %>%
+  tidyr::separate(Method_Model, into = c("Method", "Model"), sep = "_",extra="merge")
+
+cor_long_reduce$Trait[cor_long_reduce$Trait == "Growth_pheno"] <- "Growth Phenology"
+cor_long_reduce$Trait[cor_long_reduce$Trait == "Repro_pheno"] <- "Reproductive Phenology"
+cor_long_reduce$Trait[cor_long_reduce$Trait == "Leafthickness"] <- "Leaf Thickness"
+cor_long_reduce$Trait[cor_long_reduce$Trait == "Composite_fitness"] <- "Composite index"
+
+
+#Change the order of the model and pheno in the plots
+order_pheno <- c("Growth", "Growth Phenology", "Reproductive Phenology","Leaf Thickness","Composite index")
+cor_long_reduce$Trait <- factor(cor_long_reduce$Trait, levels = order_pheno)
+
+
+
+
+# Plot using ggplot2
+plot <- ggplot(cor_long_reduce, aes(x = Model, y = Correlation, color = Method, group = Method)) +
+  geom_point(size=3.5) +
+  facet_wrap(~ Trait, scales = "fixed", nrow = 2) +
+  scale_y_reverse(
+    breaks = seq(0, -0.6, by = -0.1), # Custom y-axis breaks
+    limits = c(0, -0.6)               # Ensure consistent limits across facets
+  ) +
+  labs(
+    x = "SNP set",
+    y = "Pearson Correlation"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom"
+  ) +
+  theme_bw(base_size = 11)
+
+plot
+
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Final_figures/Validation/Graph_new_models_V2.pdf");print(plot);dev.off()
+```
+
+
+
+
+
 **We can see that correlations are negatives for almost all the methods and models for each trait. This aligns with what is expected to be advantageous in the climate of the common garden. Indeed, higher growth appears to be beneficial, as does late phenology, since the common garden is situated in a mountainous climate that is sensitive to late frost events. Additionally, the annual amount of precipitation is relatively low compared to the climate of the populations, suggesting that drought tolerance traits, such as high leaf thickness, could also be advantageous.**  
 **Depending on the traits, the strength of the correlation varies across models, indicating that no single model seems to perform significantly better than the others. Regarding the traits, the composite index appears to be more closely associated with genomic offset, suggesting that this index could serve as a better fitness proxy, assuming that genomic offset is indeed negatively correlated with fitness.** 
         
@@ -401,6 +555,7 @@ lm_inf_df <- data.frame(
   Model = character(),
   Trait = character(),
   R2 = numeric(),
+  Intercept = numeric(),
   Coeff = numeric(),
   Pvalue = numeric(),
   stringsAsFactors = FALSE
@@ -448,9 +603,12 @@ for(i in 1:8) {  # Now we have 8 models (4 RDA + 4 GF)
     result_model <- data.frame(anova(lm_model))
     r_squared <- summary(lm_model)$r.squared
     pvalues <- result_model[1,5]
+    Intercept <- data.frame(coef(lm_model))[1,1]
+    
+    
     
     # Store the correlation in the dataframe
-    lm_inf_df <- rbind(lm_inf_df, data.frame(Method=method,Model = model, Trait = trait,R2=round(r_squared,3),Coeff = round(coeff,3),Pvalue=round(pvalues,3)))
+    lm_inf_df <- rbind(lm_inf_df, data.frame(Method=method,Model = model, Trait = trait,R2=round(r_squared,3),Intercept= round(Intercept,3),Coeff = round(coeff,3),Pvalue=round(pvalues,3)))
     
     # Create the data frame for plotting
     plot_data <- data.frame(
@@ -655,13 +813,13 @@ print(lm_bayesian_df)
 
 
 ```{r save lm bayesian model, include=FALSE}
-#lm_Bayesian_df_GO_taxus<- lm_bayesian_df
-#save(lm_inf_df_GO_taxus,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Linear_models/Bayesian/table/lm_Bayesian_df_GO_taxus.Rdata")
+lm_Bayesian_df_GO_taxus<- lm_bayesian_df
+save(lm_Bayesian_df_GO_taxus,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Linear_models/Bayesian/table/lm_Bayesian_df_GO_taxus.Rdata")
 
 load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Linear_models/Bayesian/table/lm_Bayesian_df_GO_taxus.Rdata")
 #save to table
 pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/all_models_period/Linear_models/Bayesian/table/table_models.pdf", height=16, width=11.5)
-grid.table(lm_inf_df_GO_taxus)
+grid.table(lm_Bayesian_df_GO_taxus)
 ttheme_default(base_size = 18)
 dev.off()
 ```

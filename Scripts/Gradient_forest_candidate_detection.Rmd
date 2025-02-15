@@ -11,23 +11,20 @@ output:
     toc_depth: 3
 ---
 
-
 # Introduction
 
 This script performs candidate detection using Gradient Forest (GF).
- 
-Gradient forest is a machine learning methods introduced by Ellis, Smith and Pitcher (2012). Fitzpatrick & Keller (2015) described how GF can be used to (1) analyze and map spatial variation in allele frequencies as a function of environmental gradients and (outliers detection using GEA) (2) project patterns of genomic variation under different climate (genomic offset).
-More precisely, "GF uses Random Forest to fit an ensemble of regression trees to model change in allele frequencies across sites and derive monotonic, nonlinear functions of environmental predictors. The empirical, nonlinear turnover functions are constructed by distributing the R^2 values from all SNPs among the predictor gradients in proportion to their accuracy importance and along each gradient according to the density of the raw split importance values. The split importance values for all modeled SNPs also are aggregated to an overall, genome-wide turnover function for each variable using weightings based on predictor importance and the goodness-of-fit for each SNP model" Fitzpatrick et al. (2021).
-GF is a univariate/ multivariate methods because it's uses random trees for one response variable and one predictor at a time, but then summarizes the information into cumulative importance turnover functions. This approach can provide results for multiple climatic variables at a time for a single SNP. GF can apply the same process across response variables to summarize the turnover function of explanatory variables on the responses (see Ellis et al., 2012 for further details).
-(RDA is also a multivariate method because it handles several response variables simultaneously. It's one of the unique method that does so. LFMM can be univariate for both or similar to GF, and BAYPASS is univariate).  
-In this script, we will use the GF algorithm for outlier detection following Fitzpatrick et al. (2021) and Archambeau et al. (2024). We will perform GF on genomic datasets corrected and non-corrected for population structure. GF will be run for each SNP, so we will obtain a turnover function for each SNP using all predictors.
+Gradient forest is a machine learning method introduced by Ellis, Smith and Pitcher (2012). Fitzpatrick & Keller (2015) describe how GF can be used to (1) analyse and map spatial variation in allele frequencies as a function of environmental gradients (outlier detection using GEA), and (2) project patterns of genomic variation under different climates (genomic offset).
+More specifically, "GF uses Random Forest to fit an ensemble of regression trees to model changes in allele frequencies across sites and derive monotonic, nonlinear functions of environmental predictors. The empirical, non-linear turnover functions are constructed by distributing the R^2 values of all SNPs across the predictor gradients in proportion to their accuracy importance and along each gradient according to the density of the raw split importance values. The split importance values for all modelled SNPs are also aggregated into an overall genome-wide turnover function for each variable using weights based on predictor importance and goodness of fit for each SNP model" Fitzpatrick et al. (2021).
+GF is a univariate/multivariate method because it uses random trees for one response variable and one predictor at a time, but then summarises the information into cumulative importance turnover functions. This approach can provide results for multiple climate variables simultaneously for a single SNP. GF can apply the same process across response variables to summarise the turnover function of explanatory variables on responses (see Ellis et al., 2012, for further details).
+(RDA is also a multivariate method because it treats several response variables simultaneously. It's one of the only methods that does this. LFMM can be univariate for both or similar to GF, and BAYPASS is univariate).  
+In this script we will use the GF algorithm for outlier detection following Fitzpatrick et al. (2021) and Archambeau et al. We will run GF on genomic datasets corrected and uncorrected for population structure. GF will be performed for each SNP, so we will obtain a turnover function for each SNP using all predictors.
 
-To evaluate the association of each locus with climatic variables, we will compute empirical p-values. These p-values are calculated by comparing a null distribution of R² values with the R² values of each locus and the more the R^2 values are away from the distribution, the more the pvalues is low.
-To compute these pvalues, the first step is to select the SNP set that will be used to generate the null distribution.
-If SNPs from intergenic regions or non-coding regions identified by genetic load are available, those are preferred. Unfortunately, in this case, we do not have such SNPs, so, like Archambeau et al. (2024), we will use a random subset of SNPs from the dataset to create the null distribution
+To assess the association of each locus with climatic variables, we will calculate empirical p-values. These p-values are calculated by comparing a null distribution of R² values with the R² values of each locus, and the more the R^2 values are away from the distribution, the more the p-value is low.
+To calculate these p-values, the first step is to select the set of SNPs that will be used to generate the null distribution.
+If SNPs from intergenic regions or non-coding regions identified by genetic load are available, these are preferred. Unfortunately, in this case we do not have such SNPs, so we will follow Archambeau et al. (2024) and use a random subset of SNPs from the dataset to generate the null distribution.
 
-    
-We will run the model 5 times for each dataset and select as canditates for each dataset the SNPs overlapping between the 5 runs because between runs the identified canditates could slightly change (Archambeau et al. 2024). 
+We will run the model 5 times for each dataset and select as canditates for each dataset the SNPs that overlap between the 5 runs, as the identified canditates may change slightly between runs (Archambeau et al. 2024). 
 
 ```{r setup, include=FALSE}
 rm(list = ls())
@@ -46,7 +43,7 @@ library(textshape) #for colnames_to_row.names
 
 ## Formatting the genomic and the climatic data
 
-To perform Gradient Forest (GF) according to Fitzpatrick et al. (2021), the data must be formatted with populations in rows and single nucleotide polymorphisms (SNPs) in columns. It's important that the order of populations is consistent between the genomic data file and the climatic data file.
+To perform Fitzpatrick et al. (2021) Gradient Forest (GF), the data must be formatted with populations in rows and single nucleotide polymorphisms (SNPs) in columns. It's important that the order of the populations is consistent between the genomic file and the climate file.
 
 ### Climatic data
 ```{r climatic_data}
@@ -57,11 +54,9 @@ vars <- colnames(Past_climatic[,-c(1:2)])
 
 ### Genomic data 
 
-
 #### GF raw
 
-The genomic file used is filtered with a minimum allele frequency (MAC) cutoff of 20, as low MAF alleles could potentially impact the genomic environmental association (GEA) (the same MAC threshold was applied for all GEA methods).
-
+The genomic file used is filtered with a minimum allele frequency (MAC) cut-off of 20, as low MAF alleles could potentially affect the genomic environmental association (GEA) (the same MAC threshold was used for all GEA methods).
 ```{r formatting data}
 #genomic data
 load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/data_allelic_frequencies_29pop_adapcon_gentree_475_8616.Rdata")
@@ -69,13 +64,10 @@ load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_ne
 genomic_matrix <- data_allelic_frequencies_29pop_adapcon_gentree_475_8616
 ```
 
-
 #### GF corrected
+GF doesn't have an option to correct for population structure directly. To run GF while correcting for population structure, we need to use a genomic dataset that has already been corrected for population structure. We cannot use the scaled population structure matrix from BAYPASS as GF requires a data frame and not a matrix, but we can use the genotypic dataset from LFMM corrected for population structure using latent factors.  
 
-GF doesn't have an option to directly correct for population structure. To perform GF while correcting for population structure, we need to use a genomic dataset that hs already been corrected for population structure. We cannot use the scaled population structure matrix of BAYPASS as GF required a dataframe and not a matrix, but we can used the genotypic dataset from LFMM that is corrected for population structure using latent factors.  
-
-We load the corrected LFMM genomic dataframe. The genomic data is at the individual level for 475 indiv , 8616 SNPs imputed and with MAF correction
-
+We load the corrected LFMM genomic dataframe. The genomic data is at the individual level for 475 individuals, 8616 imputed SNPs and with MAF correction.
 ```{r load genotypic dataset corrected for populations structure}
 load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/GEA/Genomic_matrix_corrected_from_LFMM_T_adapcon_gentree.Rdata")
 corrected_geno_data <- Genomic_matrix_corrected_from_LFMM_T_adapcon_gentree
@@ -117,16 +109,11 @@ as.data.frame()
 allelic_frequencies_f <- allelic_frequencies %>% column_to_rownames('data_frequencies_num_tot$Population')
 ```
 
-
-
-
 # Run the models
     
-In this step, we will run the GF algorithm 5 times because, as mentioned earlier, the set of candidate SNPs can vary between runs due to the inherent stochasticity of the machine learning process. Additionally, since the random selection of the null distribution may lead to different candidates being identified in each run, we will establish a more robust selection criterion by considering only those SNPs that are identified as candidates by the 5 runs. This ensures that the candidates chosen are consistent and not due to random variation in the null distribution.
-
+In this step, we will run the GF algorithm 5 times because, as mentioned earlier, the set of candidate SNPs may vary between runs due to the inherent stochasticity of the machine learning process. In addition, since the random selection of the null distribution may result in different candidates being identified in each run, we will establish a more robust selection criterion by considering only those SNPs identified as candidates by the 5 runs. This ensures that the candidates selected are consistent and not due to random variation in the null distribution.
 ```{r function to perform the GF and output the results in 1 code, message=FALSE, warning=FALSE}
 Run_GF_and_select_outliers <- function(genomic_matrix, climatic_data, ntree, cores,nbr_loci_distrib,vars,x,path){
-
   #GF function
   runGF <- function(alFreq,  envTab, vars, ntree, 
                   cores, indLoci){
@@ -213,13 +200,11 @@ neutral_snps_set <- dataset_R2_loci_climate %>%
  #name
 neutral_R2_distrib<-hist(neutral_snps_set$totalR2)
 
-
 #save the histogram
  png(filename=paste0(path,x,"neutral_R2_distrib",".png"))
-
+ 
 # a histogram we want to save
 hist(neutral_snps_set$totalR2)
-
 # call this function to save the file 
 dev.off()
  
@@ -253,12 +238,10 @@ hist(empirical_pvalues_df$pval_totalR2)
 dev.off()
   # Return the pvalues 
   return(empirical_pvalues_df)
-
 }
 ```
 
 ```{r run the models,eval=FALSE,echo=FALSE}
-
 GF_data <- c("genomic_matrix","allelic_frequencies_f")
 GF_models <- c("GF_raw","GF_corrected")
 for(i in 1: length(GF_data)){
@@ -268,9 +251,9 @@ for(i in 1: length(GF_data)){
   path <- paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/GEA_new_var/Gradient_forest/",model_name,"/")
   
 for(x in 1:5){
-  #name_file <- paste0("Run_",x,"_",model_name)
-  #Run <- Run_GF_and_select_outliers(genomic_matrix, Past_climatic, 500, 4,600,vars,x=x,path)
-  #applied(name_file, Run)
+  name_file <- paste0("Run_",x,"_",model_name)
+  Run <- Run_GF_and_select_outliers(genomic_matrix, Past_climatic, 500, 4,600,vars,x=x,path)
+  applied(name_file, Run)
   
   
   #We save the Runs of GF_raw if needed to rerun them to change threshold or perform new analysis/ figures
@@ -292,13 +275,12 @@ for(x in 1:5){
   }
 }
 ```
-    
-    
+  
 # Identification of candidate loci
 
 ## Thresholds
 
-Now we want to identify candidates. To do that, we can applied 2 types of thresholds:   
+Now we want to identify candidate SNPs. To do that, we applied 2 types of thresholds:   
 **rank pvalues threshold:**  
 - rank based 5%  
 - rank based 1%  
@@ -308,9 +290,7 @@ Now we want to identify candidates. To do that, we can applied 2 types of thresh
 - pvalues 0.01  
     
 ```{r calculation of thresholds}
-
 for(i in 1: length(GF_data)){
-  
   genomic_data <- get(GF_data[i])
   model_name <- GF_models[i]
 
@@ -345,7 +325,6 @@ outliers_pv05 <- data[,c(1,15)] %>% filter(pval_totalR2<0.05) %>% pull(SNP)
 outliers_pv0.01 <- data[,c(1,15)] %>% filter(pval_totalR2<0.01) %>% pull(SNP)
  
  assign(paste0("Run",x,"_",model_name,"_outliers_pv0.01"),outliers_pv0.01)
- 
   }
 }
 ```
@@ -353,70 +332,96 @@ outliers_pv0.01 <- data[,c(1,15)] %>% filter(pval_totalR2<0.01) %>% pull(SNP)
 
 ## Graphical visualisation
 
-One important step is to compare the results of the different runs for each threshold.
-We plotted venn_diagram plots to visualize the number of common candidates across runs
-
+An important step is to compare the results of the different runs for each threshold.
+We created venn_diagram plots to visualise the number of common candidates across runs
 ```{r plot venn_diagram for comparison across runs}
-
 for(i in 1: length(GF_data)){
-
   genomic_data <- get(GF_data[i])
   model_name <- GF_models[i]
-  
+
 #candidates 0.01
 grid.newpage()
-ven <- venn.diagram(x = list(get(paste0("Run1_",model_name,"_outliers_pv0.01")), get(paste0("Run2_",model_name,"_outliers_pv0.01")), get(paste0("Run3_",model_name,"_outliers_pv0.01")), get(paste0("Run4_",model_name,"_outliers_pv0.01")), get(paste0("Run5_",model_name,"_outliers_pv0.01"))),
-        category.names = c("RUN1" , "RUN2 ","RUN3","RUN4","RUN5"),
-        filename = NULL,fill = c("#45B6AA","#D45176","#91A6CE","#86AD4C","#33A5CE"),
-alpha = 0.30,print.mode=c("raw","percent"),margin = 0.1,  # Adjust the margins
-                    cat.fontface = "italic",  # Optional: Make category names italic
-                    cat.fontsize = 16,
-                    main= "Venn Diagram pv 0.01 candidates across GF runs",
-                    main.fontface = "bold")  # Optional: Adjust font size)
-grid.draw(ven)
-
-#candidates 0.05
-grid.newpage()
-ven <- venn.diagram(x = list(get(paste0("Run1_",model_name,"_outliers_pv0.05")), get(paste0("Run2_",model_name,"_outliers_pv0.05")), get(paste0("Run3_",model_name,"_outliers_pv0.05")), get(paste0("Run4_",model_name,"_outliers_pv0.05")), get(paste0("Run5_",model_name,"_outliers_pv0.05"))),
-        category.names = c("RUN1" , "RUN2 ","RUN3","RUN4","RUN5"),
-        filename = NULL,fill = c("#45B6AA","#D45176","#91A6CE","#86AD4C","#33A5CE"),
-alpha = 0.30,print.mode=c("raw","percent"),margin = 0.1,  # Adjust the margins
-                    cat.fontface = "italic",  # Optional: Make category names italic
-                    cat.fontsize = 16,
-                    main= "Venn Diagram pv 0.05 candidates across GF runs",
-                    main.fontface = "bold")  # Optional: Adjust font size)
+ven <- venn.diagram(
+  x = list(
+    get(paste0("Run1_",model_name,"_outliers_pv0.01")), 
+    get(paste0("Run2_",model_name,"_outliers_pv0.01")), 
+    get(paste0("Run3_",model_name,"_outliers_pv0.01")), 
+    get(paste0("Run4_",model_name,"_outliers_pv0.01")), 
+    get(paste0("Run5_",model_name,"_outliers_pv0.01"))
+  ),
+  category.names = c("RUN1", "RUN2", "RUN3", "RUN4", "RUN5"),
+  filename = NULL,
+  fill = c("#45B6AA", "#D45176", "#91A6CE", "#86AD4C", "#33A5CE"),
+  alpha = 0.30,
+  print.mode = c("raw"),  # Display raw counts + percentages
+  sigdigs = 0,  # Round percentages to whole numbers
+  margin = 0.1,  # Adjust margins
+  cat.fontface = "italic",  # Italic category labels
+  cat.fontsize = 14,  # Increase category label size
+  main = paste0("Venn Diagram: pv 0.01 candidate SNPs across ",model_name," Runs"),
+  main.fontface = "bold",
+  main.cex = 1.5,  # Increase main title size
+  cex = 1  # Increase text size inside the Venn diagram
+)
 grid.draw(ven)
 
 #top 1%
 grid.newpage()
-ven <- venn.diagram(x = list(get(paste0("Run1_",model_name,"_top1SNP"))[,1], get(paste0("Run2_",model_name,"_top1SNP"))[,1], get(paste0("Run3_",model_name,"_top1SNP"))[,1], get(paste0("Run4_",model_name,"_top1SNP"))[,1], get(paste0("Run5_",model_name,"_top1SNP"))[,1]),
-        category.names = c("RUN1" , "RUN2 ","RUN3","RUN4","RUN5"),
-        filename = NULL,fill = c("#45B6AA","#D45176","#91A6CE","#86AD4C","#33A5CE"),
-alpha = 0.30,print.mode=c("raw","percent"),margin = 0.1,  # Adjust the margins
-                    cat.fontface = "italic",  # Optional: Make category names italic
-                    cat.fontsize = 16,
-                    main= "Venn Diagram top 1% candidates across GF runs",
-                    main.fontface = "bold")  # Optional: Adjust font size)
+ven <- venn.diagram(
+  x = list(
+    get(paste0("Run1_", model_name, "_top1SNP"))[, 1], 
+    get(paste0("Run2_", model_name, "_top1SNP"))[, 1], 
+    get(paste0("Run3_", model_name, "_top1SNP"))[, 1], 
+    get(paste0("Run4_", model_name, "_top1SNP"))[, 1], 
+    get(paste0("Run5_", model_name, "_top1SNP"))[, 1]
+  ),
+  category.names = c("RUN1", "RUN2", "RUN3", "RUN4", "RUN5"),
+  filename = NULL,
+  fill = c("#45B6AA", "#D45176", "#91A6CE", "#86AD4C", "#33A5CE"),
+  alpha = 0.30,
+  print.mode = c("raw"),  # Display raw counts + percentages
+  sigdigs = 0,  # Round percentages to whole numbers
+  margin = 0.1,  # Adjust margins
+  cat.fontface = "italic",  # Italic category labels
+  cat.fontsize = 14,  # Increase category label size
+  main = paste0("Venn Diagram: Top 1% Candidate SNPs Across ",model_name," Runs"),
+  main.fontface = "bold",
+  main.cex = 1.5,  # Increase main title size
+  cex = 1  # Increase text size inside the Venn diagram
+)
 grid.draw(ven)
 
 #top 5% 
 grid.newpage()
-ven <- venn.diagram(x = list(get(paste0("Run1_",model_name,"_top5SNP"))[,1], get(paste0("Run2_",model_name,"_top5SNP"))[,1], get(paste0("Run3_",model_name,"_top5SNP"))[,1], get(paste0("Run4_",model_name,"_top5SNP"))[,1], get(paste0("Run5_",model_name,"_top5SNP"))[,1]),
-        category.names = c("RUN1" , "RUN2 ","RUN3","RUN4","RUN5"),
-        filename = NULL,fill = c("#45B6AA","#D45176","#91A6CE","#86AD4C","#33A5CE"),
-alpha = 0.30,print.mode=c("raw","percent"),margin = 0.1,  # Adjust the margins
-                    cat.fontface = "italic",  # Optional: Make category names italic
-                    cat.fontsize = 16,
-                    main= "Venn Diagram top 5% candidates across GF runs",
-                    main.fontface = "bold")  # Optional: Adjust font size)
-grid.draw(ven)
+ven <- venn.diagram(
+  x = list(
+    get(paste0("Run1_", model_name, "_top5SNP"))[, 1], 
+    get(paste0("Run2_", model_name, "_top5SNP"))[, 1], 
+    get(paste0("Run3_", model_name, "_top5SNP"))[, 1], 
+    get(paste0("Run4_", model_name, "_top5SNP"))[, 1], 
+    get(paste0("Run5_", model_name, "_top5SNP"))[, 1]
+  ),
+  category.names = c("RUN1", "RUN2", "RUN3", "RUN4", "RUN5"),
+  filename = NULL,
+  fill = c("#45B6AA", "#D45176", "#91A6CE", "#86AD4C", "#33A5CE"),
+  alpha = 0.30,
+  print.mode = c("raw"),  # Display raw counts + percentages
+  sigdigs = 0,  # Round percentages to whole numbers
+  margin = 0.1,  # Adjust margins
+  cat.fontface = "italic",  # Italic category labels
+  cat.fontsize = 14,  # Increase category label size
+  main = paste0("Venn Diagram: Top 5% Candidate SNPs Across ",model_name," Runs"),
+  main.fontface = "bold",
+  main.cex = 1.5,  # Increase main title size
+  cex = 1  # Increase text size inside the Venn diagram
+)
 
+# Draw the Venn diagram
+grid.draw(ven)
 }
 ```
 
-
 ```{r save venn_diagram plots, message=FALSE, warning=FALSE, include=FALSE}
-
 for(i in 1: length(GF_data)){
 
   genomic_data <- get(GF_data[i])
@@ -426,73 +431,77 @@ venn.diagram(x = list(get(paste0("Run1_",model_name,"_outliers_pv0.01")), get(pa
         category.names = c("RUN1" , "RUN2 ","RUN3","RUN4","RUN5"),
         filename = paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/Gradient_forest/",model_name,"/venn_diagramm_GF_raw_pv0.01.png"),fill = c("#45B6AA", B = "#D45176", C = "#91A6CE", D = "#86AD4C","#33A5CE"),
 alpha = 0.30,
-print.mode=c("raw","percent"),
+print.mode=c("raw"),
 imagetype="png",
 output=TRUE,
 margin = 0.1,  # Adjust the margins
                     cat.fontface = "italic",  # Optional: Make category names italic
-                    cat.fontsize = 16,
-                    main= "Venn Diagram pv 0.01 candidates across GF runs",
-                    main.fontface = "bold")
-
+                    cat.fontsize = 14,
+                    main= paste0("Venn Diagram: pv 0.01 candidate SNPs across ",model_name," Runs"),
+                    main.fontface = "bold",
+                    main.cex = 1.5,  # Increase main title size
+                    cex = 1)  # Increase text size inside the Venn diagram
 
   #candidates 0.05
 venn.diagram(x = list(get(paste0("Run1_",model_name,"_outliers_pv0.05")), get(paste0("Run2_",model_name,"_outliers_pv0.05")), get(paste0("Run3_",model_name,"_outliers_pv0.05")), get(paste0("Run4_",model_name,"_outliers_pv0.05")), get(paste0("Run5_",model_name,"_outliers_pv0.05"))),
         category.names = c("RUN1" , "RUN2 ","RUN3","RUN4","RUN5"),
-        filename = paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/Gradient_forest/",model_name,"/venn_diagramm_GF_raw_pv0.05.png"),fill= c("#45B6AA","#D45176","#91A6CE","#86AD4C","#33A5CE"),
+        filename = paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/Gradient_forest/",model_name,"/venn_diagramm_GF_raw_pv0.05.png"),fill = c("#45B6AA", B = "#D45176", C = "#91A6CE", D = "#86AD4C","#33A5CE"),
 alpha = 0.30,
-print.mode=c("raw","percent"),
+print.mode=c("raw"),
 imagetype="png",
 output=TRUE,
 margin = 0.1,  # Adjust the margins
                     cat.fontface = "italic",  # Optional: Make category names italic
-                    cat.fontsize = 16,
-                    main= "Venn Diagram pv 0.05 candidates across GF runs",
-                    main.fontface = "bold")
+                    cat.fontsize = 14,
+                    main= paste0("Venn Diagram: pv 0.05 candidate SNPs across ",model_name," Runs"),
+                    main.fontface = "bold",
+                    main.cex = 1.5,  # Increase main title size
+                    cex = 1)  # Increase text size inside the Venn diagram
 
 
  #top 1%
 venn.diagram(x = list(get(paste0("Run1_",model_name,"_top1SNP"))[,1], get(paste0("Run2_",model_name,"_top1SNP"))[,1], get(paste0("Run3_",model_name,"_top1SNP"))[,1], get(paste0("Run4_",model_name,"_top1SNP"))[,1], get(paste0("Run5_",model_name,"_top1SNP"))[,1]),
         category.names = c("RUN1" , "RUN2 ","RUN3","RUN4","RUN5"),
-        filename = paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/Gradient_forest/",model_name,"/venn_diagramm_GF_raw_top1.png"),fill = c("#45B6AA","#D45176","#91A6CE","#86AD4C","#33A5CE"),
+        filename = paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/Gradient_forest/",model_name,"/venn_diagramm_GF_raw_top1.png"),fill = c("#45B6AA", B = "#D45176", C = "#91A6CE", D = "#86AD4C","#33A5CE"),
 alpha = 0.30,
-print.mode=c("raw","percent"),
+print.mode=c("raw"),
 imagetype="png",
 output=TRUE,
 margin = 0.1,  # Adjust the margins
                     cat.fontface = "italic",  # Optional: Make category names italic
-                    cat.fontsize = 16,
-                    main= "Venn Diagram top 1% candidates across GF runs",
-                    main.fontface = "bold")
-
+                    cat.fontsize = 14,
+                    main= paste0("Venn Diagram: Top 1% Candidate SNPs Across ",model_name," Runs"),
+                    main.fontface = "bold",
+                    main.cex = 1.5,  # Increase main title size
+                    cex = 1)  # Increase text size inside the Venn diagram
 
  #top 5%
-s=venn.diagram(x = list(get(paste0("Run1_",model_name,"_top5SNP"))[,1], get(paste0("Run2_",model_name,"_top5SNP"))[,1], get(paste0("Run3_",model_name,"_top5SNP"))[,1], get(paste0("Run4_",model_name,"_top5SNP"))[,1], get(paste0("Run5_",model_name,"_top5SNP"))[,1]),
+venn.diagram(x = list(get(paste0("Run1_",model_name,"_top5SNP"))[,1], get(paste0("Run2_",model_name,"_top5SNP"))[,1], get(paste0("Run3_",model_name,"_top5SNP"))[,1], get(paste0("Run4_",model_name,"_top5SNP"))[,1], get(paste0("Run5_",model_name,"_top5SNP"))[,1]),
         category.names = c("RUN1" , "RUN2 ","RUN3","RUN4","RUN5"),
-        filename = paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/Gradient_forest/",model_name,"/venn_diagramm_GF_raw_top5.png"),fill = c("#45B6AA","#D45176","#91A6CE","#86AD4C","#33A5CE"),
+        filename = paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/Gradient_forest/",model_name,"/venn_diagramm_GF_raw_top5.png"),fill = c("#45B6AA", B = "#D45176", C = "#91A6CE", D = "#86AD4C","#33A5CE"),
 alpha = 0.30,
-print.mode=c("raw","percent"),
+print.mode=c("raw"),
 imagetype="png",
 output=TRUE,
 margin = 0.1,  # Adjust the margins
                     cat.fontface = "italic",  # Optional: Make category names italic
-                    cat.fontsize = 16,
-                    main= "Venn Diagram top 5% candidates across GF runs",
-                    main.fontface = "bold")
+                    cat.fontsize = 14,
+                    main= paste0("Venn Diagram: Top 5% Candidate SNPs Across ",model_name," Runs"),
+                    main.fontface = "bold",
+                    main.cex = 1.5,  # Increase main title size
+                    cex = 1)  # Increase text size inside the Venn diagram
+
 
 }
 ```
 
-Globally, we observe that only a subset of the SNPs identified as candidates is common across the runs. Additionally, the method based on top candidates appears to be more robust compared to using empirical p-values, as empirical p-values show more variability and are less consistent across different runs. This suggests that relying on top candidates is a more suitable approach for identifying robust signals.
+Overall, we observe that only a subset of SNPs identified as candidates are common across runs. In addition, the top candidate method appears to be more robust than using empirical p-values, as empirical p-values show more variability and are less consistent across runs. This suggests that relying on top candidates is a more appropriate approach for identifying robust signals.
 
 # Save candidates
-
 As candidates, we selected and saved the top candidates :
 
 ## 1% of SNPs for downstream analysis
-        
 ```{r select the overlapping candidates across runs and save them 1%}
-
 for(i in 1: length(GF_data)){
 
   genomic_data <- get(GF_data[i])
@@ -505,20 +514,17 @@ outliers_rank_based_top1perc <- Reduce(intersect, list(get(paste0("Run1_",model_
 length(outliers_rank_based_top1perc)
 
 assign(paste0("outliers_rank_based_top1perc_",model_name),outliers_rank_based_top1perc)
-
 #save
    save(list = paste0("outliers_rank_based_top1perc_",model_name), file = paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/outliers_rank_based_top1perc_", model_name, ".Rdata"))
 }
 ```
 
 ## 5% of SNPs for downstream analysis as a relax threshold candidates
-      
 ```{r select the overlapping candidates across runs and save them 5%}
 for(i in 1: length(GF_data)){
 
   genomic_data <- get(GF_data[i])
   model_name <- GF_models[i]
-  
   
 #Select only the outliers identified in all 5 runs
 outliers_rank_based_top5perc <- Reduce(intersect, list(get(paste0("Run1_",model_name,"_top5SNP"))[,1], get(paste0("Run2_",model_name,"_top5SNP"))[,1], get(paste0("Run3_",model_name,"_top5SNP"))[,1], get(paste0("Run4_",model_name,"_top5SNP"))[,1], get(paste0("Run5_",model_name,"_top5SNP"))[,1]))

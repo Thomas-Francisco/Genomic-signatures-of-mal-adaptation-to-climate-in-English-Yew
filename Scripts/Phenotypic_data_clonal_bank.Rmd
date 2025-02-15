@@ -13,9 +13,7 @@ output:
 
 ```{r library, message=FALSE, warning=FALSE, include=FALSE}
 knitr::opts_chunk$set(cache = FALSE)
-
 rm(list = ls()) 
-
 library(MCMCglmm)
 library(lme4)
 library(coda)
@@ -35,10 +33,9 @@ library(writexl)
 # Introduction
 
 The goal of this script is to estimate the BLUP values for the phenotypic data that will be used to evaluate the genomic offset predictions. BLUP estimates allow us to generate phenotypic population values for each trait while accounting for covariates, such as genotype for clones, tree ID when we have multiple measurements per tree, and tree size to account for age in growth-related traits.
-Depending on the trait, we will select a specific period for climate data extraction. For each trait, the initial year is 1992 (the year of establishment of the clonal bank), with the following end years:
-- 2021 for leaf thickness
-- 2012 for shoot volume, stem length, spring elongation, and total open male strobili
-
+Depending on the trait, we will select a specific period for climate data extraction. For each trait, the initial year is 1992 (the year of establishment of the clonal bank), with the following end years:   
+- 2021 for leaf thickness  
+- 2012 for shoot volume, stem length, spring elongation, and total open male strobili  
 
 # Phenotypic data
 
@@ -124,7 +121,6 @@ myFun_h2Qst2 <- function(mcmc){
 ```
 
 ## data
-
 ```{r phenotypic data}
 list_traits <- c("Shoot_Growth","Basal_area","Shoot_Elongation","Male_Strobili","leaf_traits")
 list_names <- c("growth","growth_bis","growth_pheno","repro_pheno","leaf_traits")
@@ -144,7 +140,7 @@ assign(paste0("phenotypic_data_",name),phenotypic_data)
 ## Selection of the period
 
 For each traits, we calculated average values across years as traits values in a given year are influenced by conditions and events from previous years. We retained the maximum number of sampling years while also maximizing the number of trees. 
-```{r mean value, message=FALSE, warning=FALSE}
+```{r Growth, message=FALSE, warning=FALSE}
 #Growth
 
 ##Shootvol
@@ -171,6 +167,7 @@ mean_traits_growth_f <- mean_traits_shootvol_merge %>%
 mean_traits_growth_bis_f <- data.frame(phenotypic_data_growth_bis) %>%
   filter(across(c(SumAB.2021.cm2, StemLength.cm), ~ !is.na(.)))
 ```
+
 ```{r Growth phenology}
 # Growth phenology
 
@@ -241,10 +238,9 @@ mean_traits_leaftraits_f <- mean_traits_leaftraits_merge %>%
   filter(Year == "Y2021")
 ```
 
-
 ## Selection of the populations with enought trees
 
-We also want to check the number of measured individuals per population, retaining only populations with more than two individuals
+We also wanted to check the number of measured individuals per population, retaining only populations with more than two individuals
 ```{r number of measured indiv per pop, eval=F,echo=T}
 table(mean_traits_growth_f$Population)
 #We remove the ACEBDO, LASENIA
@@ -277,7 +273,6 @@ assign(paste0("phenotypic_data_",name),df)
 }
 ```
 
-
 ```{r hist}
 hist(phenotypic_data_growth$mean_AverageShootVolume)
 #hist(phenotypic_data_growth_bis$SumAB.2021.cm2)
@@ -289,17 +284,15 @@ hist(phenotypic_data_leaftraits$mean_leafthickness)
 #hist(phenotypic_data_leaftraits$mean_D13C)
 ```
 
-
 # MCMC GLMM models
     
-We can now run the MCMC GLMM models for each traits. We need to specify the priors as we are working with Bayesian models. We selected a non-informative prior due to the lack of prior information. Additionally, we set the number of iterations to 1,500,000, the burn-in period to 50,000, and the thinning interval to 500, sampling every 500 iteration. We ran each model four times per trait (4 MCMC chains) to ensure stability. All traits follow a Gaussian distribution with continuous data.
-
+We can now run the MCMC GLMM models for each of the traits. We need to specify the priors as we are working with Bayesian models. We chose a non-informative prior due to the lack of prior information. We also set the number of iterations to 1,500,000, the burn-in period to 50,000, and the thinning interval to 500, sampling every 500 iterations. We ran each model four times per trait (4 MCMC chains) to ensure stability. All traits follow a Gaussian distribution with continuous data.
 
 ## Trait related to growth
     
 ### Shoot Volume
 
-For growth traits, since trees in the clonal bank vary in age, we used stem length as a covariate to account for differences in shoot volume associated with older trees. 
+For growth traits, as trees in the clonal bank vary in age, we used stem length as a covariate to account for differences in shoot volume associated with older trees. 
 
 ```{r shootvolume model,echo=T,eval=F}
 set.seed(3)
@@ -325,11 +318,9 @@ load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data
 growth_model_wo_plantID <- ShootVol_model_wo_plantID
 ```
 
-
 ## Trait related to growth phenology
 
 ### Spring elongation
-        
 ```{r springelong model,echo=T,eval=F}
 set.seed(3)
 #phenotypic_data_growth_pheno_wo_Na <- phenotypic_data_growth_pheno %>%group_by(Sex) %>% drop_na()
@@ -357,7 +348,6 @@ growth_pheno_model_wo_plantID <- springelong_model_wo_plantID
 ## Trait related to reproductive phenology
 
 ### Proportion open strobili
-
 ```{r mature Strobili model,echo=T,eval=F}
 set.seed(3)
 #set the prior info for the fixed variables: year and the randoms ones: Population and Plant
@@ -379,11 +369,9 @@ load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data
 repro_pheno_model_wo_plantID <- openstrob_model_wo_plantID
 ```
 
-
-## Leaf Traits 
+## Water statues 
 
 ### Leaf thickness
-
 ```{r Leaf thickness model,echo=T,eval=F}
 set.seed(3)
 #set the prior info for the fixed variables: year and the randoms ones: Population and Plant
@@ -405,16 +393,14 @@ load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data
 leafthickness_model_wo_plantID <-leafthickness_model_wo_plantID
 ```
 
-
 # Evaluation of the models
 
-To evaluate the performance of the models, we can investigate several aspects: 
+To evaluate the performance of the models, we investigated several aspects: 
 
 ## Autocorrelation within MCMC
 
-First we checked the autocorrelation between values within the same MCMC chain to ensure that our thinning interval was sufficient.
+First, we checked the autocorrelation between values within the same MCMC chain to ensure that our thinning interval was sufficient.
 ```{r autocorrelation values MCMC, eval=F, echo=T}
-
 list_name<- c("Population","Genet")
 list_model <- c("growth","growth_pheno","repro_pheno","leafthickness")#"growth_bis","LMA","StomDens","D13C"
 
@@ -422,9 +408,7 @@ for(i in 1:length(list_model)){
   
   model_pheno <- get(paste0(list_model[i],"_model_wo_plantID"))
   name_pheno <- list_model[i]
-
 for(x in 1:2){
-  
   name <- list_name[x]
   
   acf_list <- lapply(model_pheno, function(model) {
@@ -486,7 +470,6 @@ plot
   }
 }
 ```
-
   
 ## Chains convergence  
   
@@ -536,7 +519,6 @@ plot(mcmc_list, auto.layout=FALSE, main=paste0("Trace Plot for Overall ",name," 
 }
 ```
 
-
 Graphically, the chains appear to converge. We calculated the Gelman-Rubin index to further investigate this: 
 ```{r evaluating the models}
 list_model <- c("growth","growth_pheno","repro_pheno","leafthickness")#"growth_bis","LMA","StomDens","D13C"
@@ -570,7 +552,6 @@ We can see that the Gelman-Rubin values are below 1.1, which is defined as the t
 
 We also looked at the posterior distribution to investigate the convergence of the MCMC results.
 ```{r posterior distribution, echo=T, eval=F}
-
 for(i in 1:length(list_model)){
   model_pheno <- get(paste0(list_model[i],"_model_wo_plantID"))
   name_pheno <- list_model[i]

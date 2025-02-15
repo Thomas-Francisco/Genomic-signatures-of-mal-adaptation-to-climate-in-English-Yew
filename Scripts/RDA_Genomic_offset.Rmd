@@ -33,6 +33,7 @@ library(scales)
 library(raster)
 library(corrplot)
 library(writexl)
+library(ggspatial)
 ```
 
 ```{r meta data}
@@ -44,13 +45,12 @@ meta_data_pop_order <- meta_data_pop[order(meta_data_pop$Population),]
 
 # Introduction
 
-This script calculates the residuals of the GEA model (later called adaptive genomic disruption) and the genomic offset index using the RDA method.  
-The adaptive genomic disruption index is something we came up with to visualize how far the observed genomic compositions of populations are far from what is predicted by the GEA model for the same climate. The idea behind is that populations will not have exactly the same genomic composition as predicted by the model's linear local adaptation relationship. If populations are more or less far, this may indicate that their degree of local adaptation is lower than what is predicted as the optimum genomic composition. The main reasons could be that the population has suffered from neutral events such as drift, fixing potentially adaptive alleles, or that the populations are isolated so that some adaptive loci will not be present in the population. However, we need to keep in mind that other reasons, such as conditional neutrality or an incorrect or imprecise model, could cause these patterns.  
+This script calculates the residuals of the GEA model (later called genomic discrepancy index) and the genomic offset index using the RDA method.
+The genomic discrepancy index is something we came up with to visualise how far the observed genomic compositions of populations are from what is predicted by the GEA model for the same climate. The idea is that populations will not have exactly the same genomic composition as predicted by the model's linear local adaptation relationship. If populations have more or less differences between predicted and observed genomic composition, this may indicate that their degree of local adaptation is lower than what is predicted as the optimal genomic composition, or that adaptation is not based on the same genetic basis. The reasons for this could be that the population has suffered from neutral events such as drift, which fixes potentially adaptive alleles, or that the populations are isolated, so that some adaptive loci will not be present in the population, or that popualtions are in adaptation lag or pre adapted to future climate. However, we must remember that other reasons, such as conditional neutrality or an incorrect or imprecise model, could cause these patterns.  
 
-Genomic offset is a metric first proposed by Fitzpatrick and Keller in 2015. The aim is to calculate how much the genomic composition of populations/ individuals will need to change in the future to maintain their fitness in the context of climate change. In other words, the genomic offset is the distance between the genomic composition of the reference and the future genomic composition of potentially climate-adaptive SNPs.
-To calculate genomic offset, we need to identify potentially adaptive SNPs (or the entire set of SNPs, depending on the assumption of local adaptation) to climate, and then estimate the past/present (reference period) and future genomic composition of these SNPs. 
-To estimate the genomic composition, we will use genotype environmental association (GEAs) methods on several sets of SNPs (All snps, outlier and random). The GEAs methods will identify the relationship between the allelic variations and climatic variables. Then, based on this association and knowing the past/present and future climatic data, we can estimate the allelic composition of all locations knowing the climatic data -> we can interpolate/extrapolate the GEA relationship into space and time. This will estimate the genomic composition, and allow to perform a distance (euclidean in our study) to calculate the genomic offset. 
-
+Genomic offset is a metric first proposed by Fitzpatrick and Keller in 2015. The aim is to calculate how much the genomic composition of populations/individuals will need to change in the future to maintain their fitness in the context of climate change. In other words, the genomic offset is the distance between the genomic composition of the reference and the future genomic composition of potentially climate-adaptive SNPs.
+To calculate the genomic offset, we need to identify potentially climate-adaptive SNPs (or the entire set of SNPs, depending on the assumption of local adaptation) and then estimate the past/present (reference period) and future genomic composition of these SNPs. 
+To estimate genomic composition, we will use genotype-environment association (GEA) methods on several sets of SNPs (all SNPs, outliers and random). The GEAs methods will identify the relationship between allelic variation and climatic variables. Then, based on this association and knowing the past/present and future climatic data, we can estimate the allelic composition of all locations knowing the climatic data -> we can interpolate/extrapolate the GEA relationship in space and time. This will estimate the genomic composition and allow us to perform a distance (euclidean in our study) to calculate the genomic offset. 
 
 # Data 
 
@@ -64,19 +64,41 @@ load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/GEA_new_va
 
 Here we will also load the raster data not scaled but with the mean and sd values of the past climatic data to scaled the data together to follow Capblancq and Forester (2021).
 ```{r load climatic data raster format}
+
+list_models_clim<- c("GFDL_ESM4","IPSL_CM6A_LR","MPI_ESM1_2_HR","MRI_ESM2_0","UKESM1_0_LL") 
+
 #load past and future raster data
 climatic_variables_to_keep <-c("bio1", "bio12", "bio15","bio2","bio4","bio9") #subset of retained clim var, see script processing clim data
 list_raster <- c("past_climatic_data_raster","present_climatic_data_raster","future_climatic_data_raster")
+
+for(i in 1:length(list_models_clim)){
+  
+  model <- list_models_clim[i]
 
 for(x in 1:length(list_raster)){
   name <- c("past","present","future")
   name_clim <- name[x]#name final raster
   var <- list_raster[x]#name of the raster
-  load(paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Genomic_offset/RDA/",var,".Rdata")) #load data
+  
+  if(var == "future_climatic_data_raster"){
+    var= paste0("future_climatic_data_raster_",model)
+    
+    load(paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Genomic_offset/RDA/",var,".Rdata")) #load data
+  raster_clim <- get(var)[[climatic_variables_to_keep]]#keep only var in clim_variables to keep
+  names(raster_clim)=c("Annual_Tc","Annual_P","P_Seasonality","Diurnal_range_Tc","Tc_Seasonality","Tc_driest_quarter") #change the name to match the names of the scaled and center values
+  
+  assign(paste0("raster_",name_clim,"_clim_",model),raster_clim) 
+  
+  } else {
+    
+    load(paste0("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Genomic_offset/RDA/",var,".Rdata")) #load data
   raster_clim <- get(var)[[climatic_variables_to_keep]]#keep only var in clim_variables to keep
   names(raster_clim)=c("Annual_Tc","Annual_P","P_Seasonality","Diurnal_range_Tc","Tc_Seasonality","Tc_driest_quarter") #change the name to match the names of the scaled and center values
   
   assign(paste0("raster_",name_clim,"_clim"),raster_clim) 
+  
+  }
+}
 }
 ```
 
@@ -89,21 +111,41 @@ load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_d
 
 ```{r extract and scale the climatic data}
 
-list_period <- c("raster_past_clim","raster_present_clim","raster_future_clim")
 list_name <- c("past","present","future")
 coords <- data.frame(apply(meta_data_pop_order[,c(5:4)], 2, as.numeric))#we need to have longitude then latitude
 
-for(x in 1: length(list_period)){
+for(i in 1:length(list_models_clim)){
+  
+  model <- list_models_clim[i]
+
+for(x in 1: length(list_name)){
   
   name <- list_name[x]
-  raster_data <- get(list_period[x])
+  
+  if(name == "future"){
+    
+  raster_data <- get(paste0("raster_",name,"_clim_",model))
   
   clim_data <- raster::extract(raster_data, coords)
     clim_data_order <- data.frame(clim_data[,c(1,4,5,6,2,3)])#put it in the same order as center_env and scale object
   # Standardization of the environmental variables
   clim_data_scale <- as.data.frame(scale(clim_data_order, center=center_env_value_new_cli, scale=scale_env_value_new_cli))
   
-  assign(paste0("clim_df_",name,"_scale"),clim_data_scale)
+  assign(paste0("clim_df_",name,"_scale_",model),clim_data_scale)
+  
+  } else {
+    
+   raster_data <- get(paste0("raster_",name,"_clim"))
+  
+  clim_data <- raster::extract(raster_data, coords)
+    clim_data_order <- data.frame(clim_data[,c(1,4,5,6,2,3)])#put it in the same order as center_env and scale object
+  # Standardization of the environmental variables
+  clim_data_scale <- as.data.frame(scale(clim_data_order, center=center_env_value_new_cli, scale=scale_env_value_new_cli))
+  
+  assign(paste0("clim_df_",name,"_scale"),clim_data_scale) 
+    
+    }
+  }
 }
 ```
 
@@ -134,6 +176,8 @@ There are 2 sets of randoms SNPs:
 load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/random_neutral_set_SNPs_T_adapcon_gentree_bis.Rdata")
 
 list_random_SNPs <- colnames(random_neutral_set_SNPs_T_adapcon_gentree_bis)
+
+#write.csv(list_random_SNPs,"C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/list_random_SNPs.csv")
 ```
   
 - 1 neutral set with loci randomly selected while keeping the same number of SNPs of each class of allelic frequencies as the outlier set (LC). 
@@ -141,6 +185,8 @@ list_random_SNPs <- colnames(random_neutral_set_SNPs_T_adapcon_gentree_bis)
 ```{r load random SNPs set same AF}
 load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/random_set_taxus.Rdata")
 list_random_SNPs_same_AF <- random_set_taxus$name_snps
+
+#write.csv(list_random_SNPs_same_AF,"C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/list_random_SNPs_same_AF.csv")
 ```
   
 
@@ -164,6 +210,18 @@ load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_ne
 CG_common_set <- intersect(outliers_set_final_overlapping_no_LD_LC_new_var, colnames(gen_matrix_imp_CG))
 ```
 
+### another set of random SNPs following the allelic frequency of the outliers
+```{r}
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/random_set_taxus_not_overlap_both_dataset_V2.Rdata")
+
+list_random_SNPs_same_AF_V2 <- random_set_taxus_not_overlap_both_dataset_V2$name_snps
+```
+
+
+### all the outliers
+```{r}
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/unique_outliers.Rdata")
+```
 
 
 # Calculate GEA relationship
@@ -210,8 +268,6 @@ RDA_outliers_LC <- rda(formula = genomic_matrix[outliers_set_final_overlapping_n
 RsquareAdj(RDA_outliers_LC)
 ```
 
-
-
 - More conservative outlier set (MC)
 ```{r RDA on MC outliers set}
 RDA_outliers_MC <- rda(formula = genomic_matrix[outliers_set_final_overlapping_no_LD_new_var] ~  Annual_Tc+Diurnal_range_Tc+Tc_Seasonality+Tc_driest_quarter+Annual_P+P_Seasonality, data = Climatic_data_RDA_pRDA, scale=F)
@@ -219,10 +275,23 @@ RDA_outliers_MC <- rda(formula = genomic_matrix[outliers_set_final_overlapping_n
 RsquareAdj(RDA_outliers_MC)
 ```
 
+- V2 set random same AF (random_AF_V2)
+```{r RDA on MC outliers set}
+RDA_random_AF_V2 <- rda(formula = genomic_matrix[list_random_SNPs_same_AF_V2] ~  Annual_Tc+Diurnal_range_Tc+Tc_Seasonality+Tc_driest_quarter+Annual_P+P_Seasonality, data = Climatic_data_RDA_pRDA, scale=F)
+
+RsquareAdj(RDA_random_AF_V2)
+```
+
+- All outliers (all_outliers)
+```{r RDA on MC outliers set}
+RDA_all_outliers <- rda(formula = genomic_matrix[unique_outliers] ~  Annual_Tc+Diurnal_range_Tc+Tc_Seasonality+Tc_driest_quarter+Annual_P+P_Seasonality, data = Climatic_data_RDA_pRDA, scale=F)
+
+RsquareAdj(RDA_all_outliers)
+```
+
 We can save the models to used them later to evaluate the models:
 ```{r save rda models}
-
-list_models <- c("RDA_all","RDA_random","RDA_random_same_AF","RDA_CG","RDA_outliers_LC","RDA_outliers_MC")
+list_models <- c("RDA_all","RDA_random","RDA_random_same_AF","RDA_CG","RDA_outliers_LC","RDA_outliers_MC","RDA_random_AF_V2","RDA_all_outliers")
 
 for(x in 1:length(list_models)){
   
@@ -238,15 +307,18 @@ For further analysis, we will perform the analysis on the different outlier sets
 ```{r list set}
 list_outliers_set <- c("list_all_SNPs","list_random_SNPs","list_random_SNPs_same_AF","outliers_set_final_overlapping_no_LD_LC_new_var","outliers_set_final_overlapping_no_LD_new_var","CG_common_set")
 list_RDA <- c("RDA_all","RDA_random","RDA_random_same_AF","RDA_outliers_LC","RDA_outliers_MC","RDA_CG")
+
+list_outliers_set_V2 <- c("list_all_SNPs","list_random_SNPs","list_random_SNPs_same_AF","outliers_set_final_overlapping_no_LD_LC_new_var","outliers_set_final_overlapping_no_LD_new_var","CG_common_set","list_random_SNPs_same_AF_V2","unique_outliers")
+list_RDA_V2 <- c("RDA_all","RDA_random","RDA_random_same_AF","RDA_outliers_LC","RDA_outliers_MC","RDA_CG","RDA_random_AF_V2","RDA_all_outliers")
 ```
 
 ## Graphical visualization
 
 We can plot the repartitioning of outliers along the RDA axes and the climatic variables: 
 ```{r screeplot outliers LC, eval=F, echo=T}
-for(x in 1: length(list_RDA)){
-  RDA <- get(list_RDA[x])
-  name <- c("all","random_SNPs","RDA_random_same_AF","outliers_Lc","Outliers_Mc","CG_set")
+for(x in 1: length(list_RDA_V2)){
+  RDA <- get(list_RDA_V2[x])
+  name <- c("all","random_SNPs","RDA_random_same_AF","outliers_Lc","Outliers_Mc","CG_set","random_AF_V2","all_outliers")
   #screeplot
 plot(RDA$CCA$eig, option="screeplot")
 
@@ -260,7 +332,7 @@ assign(paste0("explain_variance",name[x]),explain_variance)
 
   print(get(paste0("explain_variance",name[x])))
   #save
-pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/RDA/figures/screeplot/Screeplot_RDA_",name[x],".pdf"));screeplot(RDA,main = paste0("Hist screeplot ",name[x]));dev.off()
+#pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/RDA/figures/screeplot/Screeplot_RDA_",name[x],".pdf"));screeplot(RDA,main = paste0("Hist screeplot ",name[x]));dev.off()
 }
 ```
 
@@ -289,10 +361,10 @@ We can see that the first two RDA axes appear to explain the majority of the gen
 We can also plot the loci and climatic variables in the RDA space to visualize their relationships:
 ```{r plot biplot loci,eval=F, echo=T}
 
-for(x in 1:length(list_RDA)){
+for(x in 1:length(list_RDA_V2)){
   
-  RDA <- get(list_RDA[x])
-  name <- c("all","random_SNPs","RDA_random_same_AF","outliers_Lc","Outliers_Mc","CG_set")
+  RDA <- get(list_RDA_V2[x])
+  name <- c("all","random_SNPs","RDA_random_same_AF","outliers_Lc","Outliers_Mc","CG_set","random_AF_V2","all_outliers")
   
   score_loci <- as.data.frame(scores(RDA, choices=c(1:2), display="species", scaling="none"))
 score_climatic_var <- as.data.frame(scores(RDA, choices=c(1:2), display="bp"))
@@ -317,7 +389,7 @@ explained_variance_round <- round(RDA$CCA$eig*100/sum(RDA$CCA$eig),digits=1)
  
  #save plots
  
-pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/RDA/figures/biplot/biplot_outliers_RDA_",name[x],".pdf"));print(biplot_outliers_RDA);dev.off()
+#pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/RDA/figures/biplot/biplot_outliers_RDA_",name[x],".pdf"));print(biplot_outliers_RDA);dev.off()
 }
 ```
 
@@ -357,9 +429,9 @@ We observe a pattern of continentality/elevation along the first axis, with cold
 We can also plot the populations in this space to examine whether their distribution follows the expected climatic pattern. Here, the population positions represent observed values, rather than predicted ones as in other studies.
 
 ```{r biplot pop on the outliers RDA space,eval=F, echo=T}
-for(x in 1:length(list_RDA)){
-  RDA <- get(list_RDA[x])
-  name <- c("all","random_SNPs","RDA_random_same_AF","outliers_Lc","Outliers_Mc","CG_set")
+for(x in 1:length(list_RDA_V2)){
+  RDA <- get(list_RDA_V2[x])
+  name <- c("all","random_SNPs","RDA_random_same_AF","outliers_Lc","Outliers_Mc","CG_set","random_AF_V2","all_outliers")
   
   #score along the 2 first RDA axis
 score_climatic_var <- as.data.frame(scores(RDA, choices=c(1:2), display="bp"))
@@ -397,7 +469,7 @@ biplot_populations <- ggplot() +
  
 #save plots
  
-pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/RDA/figures/biplot/biplot_population_RDA_",name[x],".pdf"));print(biplot_populations);dev.off()
+#pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/RDA/figures/biplot/biplot_population_RDA_",name[x],".pdf"));print(biplot_populations);dev.off()
 }
 ```
 
@@ -478,7 +550,7 @@ adaptive_index_function <- function(RDA, K, env_pres,coords, scale_env, center_e
 ```
 
 We can apply this function to our dataset for the different period to calculate the adaptive index for past, present and future period:  
-```{r run adaptive index function to past data random set}
+#```{r run adaptive index function to past data random set}
 
 list_clim_data <- c("raster_past_clim","raster_present_clim","raster_future_clim")
 list_RDA <- c("RDA_random","RDA_random_same_AF","RDA_outliers_LC","RDA_outliers_MC","RDA_CG")
@@ -504,7 +576,7 @@ assign(paste0("df_RDA_",period,"_score_",set),df_RDA_past_score)
   
   }
 }
-```
+#```
 
 Now we can compare the observed and predicted RDA values:
 ```{r comparison RDA observed vs predicted values}
@@ -642,10 +714,10 @@ We can now calculate the predicted genomic composition for past, present, and fu
 
 ```{r predictions_adaptive_values}
 
-list_rda <- c("RDA_all","RDA_random","RDA_random_same_AF","RDA_outliers_LC","RDA_outliers_MC","RDA_CG")
-list_clim <- c("clim_df_past_scale","clim_df_present_scale","clim_df_future_scale")
+list_rda <- c("RDA_all","RDA_random","RDA_random_same_AF","RDA_outliers_LC","RDA_outliers_MC","RDA_CG","RDA_random_AF_V2","RDA_all_outliers")
+#list_clim <- c("clim_df_past_scale","clim_df_present_scale","clim_df_future_scale")
 list_period <- c("past","present","future")
-list_set <- c("all","random","random_same_AF","LC","MC","CG")
+list_set <- c("all","random","random_same_AF","LC","MC","CG","random_AF_V2","all_outliers")
 
 K=2 #number of rda axes retained
 
@@ -654,22 +726,32 @@ for(i in 1: length(list_rda)){
   rda_model <- get(list_rda[i])
   set <- list_set[i]
   
-  for(x in 1: length(list_clim)){
+  for(x in 1: length(list_period)){
     
-  clim <- get(list_clim[x])
+  name <- list_period[x]
   
-  period <- list_period[x]
+  if(name == "future"){
   
+  for(a in 1:length(list_models_clim)){
+  
+  models_clim <- list_models_clim[a]
+  clim <- get(paste0("clim_df_",name,"_scale_",models_clim))
+  predictions <- data.frame(Population=meta_data_pop_order$Population,predict(rda_model,clim, type = "lc", rank = K, scaling = "none"))
+  assign(paste0("adaptive_values_",set,"_",name,"_",models_clim),predictions)
+  }
+  
+  }else{
+    clim <- get(paste0("clim_df_",name,"_scale"))
   #model
   predictions <- data.frame(Population=meta_data_pop_order$Population,predict(rda_model,clim, type = "lc", rank = K, scaling = "none"))
   
-  assign(paste0("adaptive_values_",set,"_",period),predictions)
-  
+  assign(paste0("adaptive_values_",set,"_",name),predictions)
+  }
   }
 }
-
-
 ```
+
+
 
 We compared the predicted values between the predict method and the loading method
 ```{r predictions_genomic_compo}
@@ -730,7 +812,7 @@ The AGD is an index that calculates the disruption between predicted and observe
 To calculate this, we applied the same method used for genomic offset: measuring the distance between two genomic compositions — here, the observed and predicted values at the time of establishment (1901–1950, referred to as 'past').
 
 ## Calculation
-    
+
 ```{r AGD function}
 Adaptive_genomic_disruption <- function(RDA, K, observed_score, predicted_score,meta_data){
 # Weights based on axis eigen values
@@ -767,8 +849,8 @@ Adaptive_genomic_disruption <- function(RDA, K, observed_score, predicted_score,
 
 
 ```{r AGD_calculation}
-list_rda <- c("RDA_all","RDA_random","RDA_random_same_AF","RDA_outliers_LC","RDA_outliers_MC","RDA_CG")
-list_predicted_adaptive_values <- c("adaptive_values_all_past","adaptive_values_random_past","adaptive_values_random_same_AF_past","adaptive_values_LC_past","adaptive_values_MC_past","adaptive_values_CG_past")
+list_rda <- c("RDA_all","RDA_random","RDA_random_same_AF","RDA_outliers_LC","RDA_outliers_MC","RDA_CG","RDA_random_AF_V2","RDA_all_outliers")
+list_predicted_adaptive_values <- c("adaptive_values_all_past","adaptive_values_random_past","adaptive_values_random_same_AF_past","adaptive_values_LC_past","adaptive_values_MC_past","adaptive_values_CG_past","adaptive_values_random_AF_V2_past","adaptive_values_all_outliers_past")
 
 for(x in 1: length(list_rda)){
 
@@ -794,7 +876,7 @@ We can save the values of AGD.
 
 ```{r save AGD, include=FALSE}
 
-list_AGD <- c("AGD_index_all","AGD_index_random","AGD_index_random_same_AF","AGD_index_LC","AGD_index_MC","AGD_index_CG")
+list_AGD <- c("AGD_index_all","AGD_index_random","AGD_index_random_same_AF","AGD_index_LC","AGD_index_MC","AGD_index_CG","AGD_index_random_AF_V2","AGD_index_all_outliers")
 for(x in 1:length(list_AGD)){
    file_save<- get(list_AGD[x])
   name <- list_AGD[x]
@@ -803,10 +885,154 @@ for(x in 1:length(list_AGD)){
 }
 ```
 
+
+
+
+### Relative AGD
+    
+```{r Relative AGD}
+Adaptive_genomic_disruption <- function(RDA, K, observed_score, predicted_score, meta_data) {
+  # Weights based on axis eigenvalues
+  weights <- RDA$CCA$eig / sum(RDA$CCA$eig)
+  
+  # Weighted observed and predicted scores
+  Proj_offset_observed <- as.data.frame(do.call(cbind, lapply(1:K, function(x) observed_score[,x] * weights[x])))
+  predicted_score_df <- predicted_score[,-1]
+  Proj_offset_predicted <- as.data.frame(do.call(cbind, lapply(1:K, function(x) predicted_score_df[,x] * weights[x])))
+  
+  # Calculate the absolute differences for each axis
+  Proj_offset <- list()
+  for (i in 1:K) {
+    Proj_offset[[i]] <- abs(Proj_offset_observed[[i]] - Proj_offset_predicted[[i]])
+    names(Proj_offset)[i] <- paste0("RDA", as.character(i))
+  }
+  
+  # Calculate the global AGD using Euclidean distance across all axes
+  Proj_offset_global <- unlist(lapply(1:nrow(Proj_offset_observed), function(x) {
+    dist(rbind(Proj_offset_observed[x,], Proj_offset_predicted[x,]), method = "euclidean")
+  }))
+  names(Proj_offset_global) <- "AGD"
+  
+  # Calculate the relative index as a Euclidean distance of relative differences
+  relative_change <- unlist(lapply(1:nrow(Proj_offset_observed), function(x) {
+    # Extract the observed and predicted scores for this row as numeric vectors
+    observed_row <- as.numeric(Proj_offset_observed[x, ])
+    predicted_row <- as.numeric(Proj_offset_predicted[x, ])
+    
+    # Calculate relative differences for all axes
+    relative_diff <- (predicted_row - observed_row) / observed_row
+    relative_diff[is.nan(relative_diff) | is.infinite(relative_diff)] <- 0  # Handle division by zero or NA
+    
+    # Compute Euclidean distance of relative differences
+    dist(rbind(rep(0, K), relative_diff), method = "euclidean")
+  }))
+  names(relative_change) <- "Relative_Index"
+  
+  # Return results
+  return(list(
+    Population = meta_data$Population, 
+    Proj_offset = Proj_offset, 
+    Proj_offset_global = Proj_offset_global, 
+    Relative_change = relative_change, 
+    weights = weights[1:K]
+  ))
+}
+```
+
+
+
+```{r Relative AGD}
+list_rda <- c("RDA_all", "RDA_random", "RDA_random_same_AF", "RDA_outliers_LC", "RDA_outliers_MC", "RDA_CG")
+list_predicted_adaptive_values <- c("adaptive_values_all_past", "adaptive_values_random_past", "adaptive_values_random_same_AF_past", "adaptive_values_LC_past", "adaptive_values_MC_past", "adaptive_values_CG_past")
+
+for (x in 1:length(list_rda)) {
+  rda <- get(list_rda[x])
+  observed_values <- scores(rda, display = "sites", scaling = "none")
+  predicted_values <- data.frame(get(list_predicted_adaptive_values[x]))
+  set <- list_set[x]
+  
+  # Calculate AGD and Relative Change using the updated function
+  calculated_AGD <- Adaptive_genomic_disruption(rda, K, observed_values, predicted_values, meta_data_pop_order)
+  
+  # Create a dataframe for AGD and combined relative index values
+  genomic_offset_df <- data.frame(
+    Population = unlist(calculated_AGD$Population),
+    Genomic_offset = unlist(calculated_AGD$Proj_offset_global),
+    Relative_Index = unlist(calculated_AGD$Relative_change)  # Add the combined relative index
+  )
+  
+  # Rename columns to be more informative
+  colnames(genomic_offset_df) <- c("Population", paste0("values_", set), paste0("Relative_Index_", set))
+  
+  # Assign the dataframe to a new variable with a dynamic name
+  assign(paste0("AGD_index_bis_", set), genomic_offset_df)
+}
+```
+
+
 ## Plot the AGD values
 
 We can plot the AGD values for each population. As before, we can apply the cut_number function to rescale the values to match the color scale used for other genomic offsets, such as GF."
 ```{r plot AGD,eval=F, echo=T}
+
+shapefile <- st_read("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/shapefiles/Taxus_baccata_plg_clip.shp")
+
+list_period <- c("present","future")
+list_set <- c("all","random","random_same_AF","LC","MC","CG","random_AF_V2","all_outliers")
+
+# Loop to find the global min and max values across all data frames to cut the values and be able to compare the values across model.
+#for(set in list_set){
+#  AGD_df <- get(paste0("AGD_index_",set))
+#  global_min <- min(global_min, min(AGD_df[,2], na.rm = TRUE))
+#  global_max <- max(global_max, max(AGD_df[,2], na.rm = TRUE))
+#}
+  for(x in 1: length(list_set)){
+    
+    set <- list_set[x]
+    AGD_df <- get(paste0("AGD_index_",set))
+    
+     #first, we need to add the coordinates
+AGD_coord <- merge(AGD_df,meta_data_pop_order[,c(2,4,5)],"Population")
+
+#transform longitude and latitude to numeric variables
+AGD_coord <- AGD_coord %>% mutate(Longitude=as.numeric(Longitude),Latitude=as.numeric(Latitude))
+
+
+colors <- c( "darkgreen", "#FDF7B3","#FC4E2A","#BD0026","darkorchid4")
+#background map
+admin <- ne_countries(scale = "medium", returnclass = "sf")
+      
+plot <- ggplot(data = AGD_coord) + 
+  geom_sf(data = admin, fill = gray(0.92), size = 0) +
+  geom_sf(data = shapefile, fill = "lightgrey", color = "black", size = 0.2) +  # Adding shapefile
+  geom_point(aes(x = Longitude, y = Latitude, fill = cut_interval(AGD_coord[,2], n = 5)), shape = 21,size=3, color = "black") +
+  #geom_point(aes(x = Longitude, y = Latitude, fill = cut(AGD_coord[,2], breaks=seq(global_min, global_max, length.out = 6), include.lowest = T)), shape = 21,size=3, color = "black") + #if we want to class with the same values the 4 models to compare color
+  scale_fill_manual(
+    values = colors,
+    labels = c("low values","","","","high values"),
+    drop = FALSE,na.translate = FALSE)+  # Ensure all levels are shown in the legend
+  geom_sf(data = admin, fill = NA, size = 0.1) +
+  coord_sf(xlim = c(-10, 30), ylim = c(35, 62), expand = FALSE) +
+  xlab("Longitude") + ylab("Latitude") +
+  guides(fill = guide_legend(title = "Adaptive genomic disruption")) +
+  ggtitle(paste0("Adaptive genomic disruption across populations ",set)) +
+  annotation_scale(location = "br", width_hint = 0.3) + # Scale bar at bottom left
+  annotation_north_arrow(location = "tl", which_north = "true", 
+                         pad_x = unit(-0.2, "cm"), pad_y = unit(0.08, "cm"),
+                         style = north_arrow_fancy_orienteering) + # Compass rose
+  theme_bw(base_size = 11) +
+  theme(legend.position="right", panel.grid = element_blank(), strip.text = element_text(size=11),plot.title = element_text(hjust = 0.5,color = "Black",face="italic"))
+      
+print(plot) 
+
+#save
+     #pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/AGD/RDA/figures/Adaptive genomic disruption across populations ",set,".pdf"));print(plot);dev.off()
+}
+```
+
+```{r plot AGD scaled values 0-1, eval=FALSE, include=FALSE}
+
+shapefile <- st_read("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/shapefiles/Taxus_baccata_plg_clip.shp")
 
 list_period <- c("present","future")
 list_set <- c("all","random","random_same_AF","LC","MC","CG")
@@ -833,33 +1059,41 @@ colors <- c( "darkgreen", "#FDF7B3","#FC4E2A","#BD0026","darkorchid4")
 #background map
 admin <- ne_countries(scale = "medium", returnclass = "sf")
       
+AGD_coord$scaled_values <- (AGD_coord[,2]-min(AGD_coord[,2]))/(max(AGD_coord[,2])-min(AGD_coord[,2]))
+
 plot <- ggplot(data = AGD_coord) + 
   geom_sf(data = admin, fill = gray(0.92), size = 0) +
-  geom_point(aes(x = Longitude, y = Latitude, fill = cut_number(AGD_coord[,2], n = 5)), shape = 21,size=3, color = "black") +
+  geom_sf(data = shapefile, fill = "lightgrey", color = "black", size = 0.2) +  # Adding shapefile
+  geom_point(aes(x = Longitude, y = Latitude, fill = cut_interval(AGD_coord[,5], n = 5)), shape = 21,size=3, color = "black") +
   #geom_point(aes(x = Longitude, y = Latitude, fill = cut(AGD_coord[,2], breaks=seq(global_min, global_max, length.out = 6), include.lowest = T)), shape = 21,size=3, color = "black") + #if we want to class with the same values the 4 models to compare color
   scale_fill_manual(
     values = colors,
-    labels = c("low values","","","","high values"),
+    labels = c("0","0.25","0.5","0.75","1"),
     drop = FALSE,na.translate = FALSE)+  # Ensure all levels are shown in the legend
   geom_sf(data = admin, fill = NA, size = 0.1) +
   coord_sf(xlim = c(-10, 30), ylim = c(35, 62), expand = FALSE) +
   xlab("Longitude") + ylab("Latitude") +
   guides(fill = guide_legend(title = "Adaptive genomic disruption")) +
   ggtitle(paste0("Adaptive genomic disruption across populations ",set)) +
+  annotation_scale(location = "br", width_hint = 0.3) + # Scale bar at bottom left
+  annotation_north_arrow(location = "tl", which_north = "true", 
+                         pad_x = unit(-0.2, "cm"), pad_y = unit(0.08, "cm"),
+                         style = north_arrow_fancy_orienteering) + # Compass rose
   theme_bw(base_size = 11) +
   theme(legend.position="right", panel.grid = element_blank(), strip.text = element_text(size=11),plot.title = element_text(hjust = 0.5,color = "Black",face="italic"))
       
 print(plot) 
 
 #save
-     pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/AGD/RDA/figures/Adaptive genomic disruption across populations ",set,".pdf"));print(plot);dev.off()
+     #pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/AGD/RDA/figures/Adaptive genomic disruption across populations ",set,".pdf"));print(plot);dev.off()
 }
 ```
 
 ```{r graph rmarkdown 4, echo=FALSE}
 list_set_rmarkdown <- c("LC")
+colors <- c( "darkgreen", "#FDF7B3","#FC4E2A","#BD0026","darkorchid4")
 
-  for(x in 1: length(list_set_rmarkdown)){
+for(x in 1: length(list_set_rmarkdown)){
     
     set <- list_set_rmarkdown[x]
     AGD_df <- get(paste0("AGD_index_",set))
@@ -870,14 +1104,14 @@ AGD_coord <- merge(AGD_df,meta_data_pop_order[,c(2,4,5)],"Population")
 #transform longitude and latitude to numeric variables
 AGD_coord <- AGD_coord %>% mutate(Longitude=as.numeric(Longitude),Latitude=as.numeric(Latitude))
 
-
-colors <- c( "darkgreen", "#FDF7B3","#FC4E2A","#BD0026","darkorchid4")
+#colors <- colorRamps::green2red(5)
+#colors <- RColorBrewer::brewer.pal(5, "YlOrRd")
 #background map
 admin <- ne_countries(scale = "medium", returnclass = "sf")
       
 plot <- ggplot(data = AGD_coord) + 
   geom_sf(data = admin, fill = gray(0.92), size = 0) +
-  geom_point(aes(x = Longitude, y = Latitude, fill = cut_number(AGD_coord[,2], n = 5)), shape = 21,size=3, color = "black") +
+  geom_point(aes(x = Longitude, y = Latitude, fill = cut_interval(AGD_coord[,2], n = 5)), shape = 21,size=3, color = "black") +
   #geom_point(aes(x = Longitude, y = Latitude, fill = cut(AGD_coord[,2], breaks=seq(global_min, global_max, length.out = 6), include.lowest = T)), shape = 21,size=3, color = "black") + #if we want to class with the same values the 4 models to compare color
   scale_fill_manual(
     values = colors,
@@ -895,12 +1129,61 @@ print(plot)
 }
 ```
 
+```{r}
+library(viridis) # For color palettes
+
+plot <- ggplot(data = AGD_coord) + 
+  # Background map
+  geom_sf(data = admin, fill = gray(0.92), size = 0) +
+  
+  # Population points with a smoother gradient
+  geom_point(aes(x = Longitude, y = Latitude, fill = AGD_coord[, 2]), 
+             shape = 21, size = 3, color = "black") +
+  
+  # Color scale: using a continuous gradient
+  scale_fill_viridis(
+    option = "C", # Choose a palette (e.g., "C" or "D")
+    name = "Adaptive genomic disruption", 
+    breaks = scales::pretty_breaks(n = 5), # Evenly spaced breaks
+    labels = c("low values","","","","high values")
+  ) +
+  
+  # Add country borders (overlay to highlight boundaries)
+  geom_sf(data = admin, fill = NA, size = 0.2, color = "gray40") +
+  
+  # Coordinate system with optional buffer
+  coord_sf(xlim = c(-10, 30), ylim = c(35, 62), crs = 4326, expand = TRUE) +
+  
+  # Axis labels and title
+  xlab("Longitude") + 
+  ylab("Latitude") + 
+  ggtitle("Geographic distribution of adaptive genomic disruption") +
+  
+  # Customize the legend
+  guides(fill = guide_colorbar(barwidth = 10, barheight = 0.5)) +
+  
+  # Theme improvements
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "right",
+    legend.title = element_text(size = 11),
+    legend.text = element_text(size = 10),
+    panel.grid = element_blank(),
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  )
+
+plot
+```
+
+
 Example LC: Overall, an interesting pattern emerges, with higher AGD values observed in populations that appear isolated from the others, such as Greece. However, this pattern is not consistent, as we don’t observe high AGD values for isolated northern populations (e.g., Sweden, Norway). We can also compare AGD values across models and with respect to elevation:
 
 ```{r correlation AGD}
 
 #df AGD and elevation
-df_AGD_cor <- data.frame(AGD_all=AGD_index_all$values_all,AGD_random=AGD_index_random$values_random,AGD_random_same_AF=AGD_index_random_same_AF$values_random_same_AF,AGD_LC=AGD_index_LC$values_LC,AGD_MC=AGD_index_MC$values_MC,AGD_CG=AGD_index_CG$values_CG,elevation=as.numeric(meta_data_pop_order$Elevation.DEM_90m.))
+df_AGD_cor <- data.frame(AGD_all=AGD_index_all$values_all,AGD_random=AGD_index_random$values_random,AGD_random_same_AF=AGD_index_random_same_AF$values_random_same_AF,AGD_LC=AGD_index_LC$values_LC,AGD_MC=AGD_index_MC$values_MC,AGD_CG=AGD_index_CG$values_CG,elevation=as.numeric(meta_data_pop_order$Elevation.DEM_90m.),Latitude=as.numeric(meta_data_pop_order$Latitude))
 
 #correlation
 correlation_AGD <- cor(df_AGD_cor)
@@ -964,12 +1247,12 @@ genomic_offset_pop <- function(RDA, K, Past_score, Future_score,meta_data){
 
 We can run the GO function for all the set of genetic markers for present and future climate: 
 ```{r standard genomic offset calculation}
-list_RDA <- c("RDA_all","RDA_random", "RDA_random_same_AF", "RDA_outliers_LC", "RDA_outliers_MC", "RDA_CG")
-list_past_score <- c("adaptive_values_all_past","adaptive_values_random_past", "adaptive_values_random_same_AF_past", "adaptive_values_LC_past", "adaptive_values_MC_past", "adaptive_values_CG_past")
-list_present_score <- c("adaptive_values_all_present","adaptive_values_random_present", "adaptive_values_random_same_AF_present", "adaptive_values_LC_present", "adaptive_values_MC_present", "adaptive_values_CG_present")
-list_future_score <- c("adaptive_values_all_future","adaptive_values_random_future", "adaptive_values_random_same_AF_future", "adaptive_values_LC_future", "adaptive_values_MC_future", "adaptive_values_CG_future")
-list_name_present <- c("all_present","random_present", "random_same_AF_present", "LC_present", "MC_present", "CG_present")
-list_name_future <- c("all_future","random_future", "random_same_AF_future", "LC_future", "MC_future", "CG_future")
+list_RDA <- c("RDA_all","RDA_random", "RDA_random_same_AF", "RDA_outliers_LC", "RDA_outliers_MC", "RDA_CG","RDA_random_AF_V2","RDA_all_outliers")
+list_past_score <- c("adaptive_values_all_past","adaptive_values_random_past", "adaptive_values_random_same_AF_past", "adaptive_values_LC_past", "adaptive_values_MC_past", "adaptive_values_CG_past","adaptive_values_random_AF_V2_past","adaptive_values_all_outliers_past")
+list_present_score <- c("adaptive_values_all_present","adaptive_values_random_present", "adaptive_values_random_same_AF_present", "adaptive_values_LC_present", "adaptive_values_MC_present", "adaptive_values_CG_present","adaptive_values_random_AF_V2_present","adaptive_values_all_outliers_present")
+#list_future_score <- c("adaptive_values_all_future","adaptive_values_random_future", "adaptive_values_random_same_AF_future", "adaptive_values_LC_future", "adaptive_values_MC_future", "adaptive_values_CG_future")
+list_name_present <- c("all_present","random_present", "random_same_AF_present", "LC_present", "MC_present", "CG_present","random_AF_V2_present","all_outliers_present")
+list_name_future <- c("all_future","random_future", "random_same_AF_future", "LC_future", "MC_future", "CG_future","random_AF_V2_future","all_outliers_future")
 
 # Loop through each RDA model
 for (i in 1:length(list_RDA)) {
@@ -977,7 +1260,6 @@ for (i in 1:length(list_RDA)) {
   RDA <- get(list_RDA[i])
   adaptive_past_score <- get(list_past_score[i])
   present_score <- get(list_present_score[i])
-  future_score <- get(list_future_score[i])
   
   # Calculate genomic offset for the present scenario
   name_present <- list_name_present[i]
@@ -995,7 +1277,11 @@ for (i in 1:length(list_RDA)) {
   assign(paste0("Genomic_offset_Taxus_Adapcon_Gentree_RDA_", name_present), Genomic_offset_Taxus_Adapcon_Gentree_RDA_present)
   
   # Calculate genomic offset for the future scenario
-  name_future <- list_name_future[i]
+  for (j in 1:length(list_models_clim)) {  # Loop through 5 future models
+    
+    name_clim <- list_models_clim[j]
+    name_future <- paste0(list_name_future[i],"_", name_clim)
+    future_score <- get(paste0("adaptive_values_",list_name_future[i],"_", name_clim))
   Run_genomic_offset_pop_future <- genomic_offset_pop(RDA, 2, adaptive_past_score, future_score, meta_data_pop_order)
   
   # Create a data frame for the future scenario genomic offset
@@ -1007,37 +1293,214 @@ for (i in 1:length(list_RDA)) {
   colnames(Genomic_offset_Taxus_Adapcon_Gentree_RDA_future) <- c("Population", paste0("GO_", name_future))
   
   # Assign the future result to a new variable
-  assign(paste0("Genomic_offset_Taxus_Adapcon_Gentree_RDA_", name_future), Genomic_offset_Taxus_Adapcon_Gentree_RDA_future)
+  assign(paste0("Genomic_offset_Taxus_Adapcon_Gentree_RDA_",name_future), Genomic_offset_Taxus_Adapcon_Gentree_RDA_future)
+  }
 }
 ```
 
 We can save the genomic offset values for downstream analysis. 
 ```{r save genomic offset values predicted GO, include=FALSE}
 list_period <- c("present","future")
-list_set <- c("all","random","random_same_AF","LC","MC","CG")
+list_set <- c("all","random","random_same_AF","LC","MC","CG","random_AF_V2","all_outliers")
 
 for(i in 1:length(list_set)){
   set <- list_set[i]
   for(x in 1:length(list_period)){
     period <- list_period[x]
-    name_file <- paste0(set,"_",period)
+    
+    if(period == "future"){
+      
+      for (j in 1:length(list_models_clim)) {
+        
+      model_clim <- list_models_clim[j]
+      name_file <- paste0(set,"_",period,"_",model_clim)
+      
+      file_save<- get(paste0("Genomic_offset_Taxus_Adapcon_Gentree_RDA_",name_file))
+  name <- paste0("GO_T_Adapcon_Gentree_RDA_",name_file)
+  assign(name,file_save)
+  save(list = name,file=paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/RDA/data/",name,".Rdata"))
+      
+      }
+      
+    } else{
+      
+      name_file <- paste0(set,"_",period)
     
   file_save<- get(paste0("Genomic_offset_Taxus_Adapcon_Gentree_RDA_",name_file))
   name <- paste0("GO_T_Adapcon_Gentree_RDA_",name_file)
   assign(name,file_save)
   save(list = name,file=paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/RDA/data/",name,".Rdata"))
+      
+    }
+    
   }
 }
-
 ```
 
+
+### Comparison GO predictions across climatic models
+
+```{r correlation across GCMs}
+
+list_set <- c("all","random","random_same_AF","LC","MC","CG","random_AF_V2","all_outliers")
+
+for(x in 1:length(list_set)){
+  
+  set <- list_set[x]
+  
+ df_tot_GO_predictions_clim_models_future <- data.frame(Population=GO_T_Adapcon_Gentree_RDA_random_future_GFDL_ESM4[,1],GFDL_ESM4=get(paste0("GO_T_Adapcon_Gentree_RDA_",set,"_future_GFDL_ESM4"))[,2],IPSL_CM6A_LR=get(paste0("GO_T_Adapcon_Gentree_RDA_",set,"_future_IPSL_CM6A_LR"))[,2],MPI_ESM1_2_HR=get(paste0("GO_T_Adapcon_Gentree_RDA_",set,"_future_MPI_ESM1_2_HR"))[,2],MRI_ESM2_0=get(paste0("GO_T_Adapcon_Gentree_RDA_",set,"_future_MRI_ESM2_0"))[,2],UKESM1_0_LL=get(paste0("GO_T_Adapcon_Gentree_RDA_",set,"_future_UKESM1_0_LL"))[,2],elevation=as.numeric(meta_data_pop_order$Elevation.DEM_90m.))
+
+correlation_future <- cor(df_tot_GO_predictions_clim_models_future[,-1])
+corrplot(correlation_future, method = "number", addrect = 2, col = c("darkorange","darkred"), type = "lower", tl.col = "black", tl.cex = 0.6, number.cex = 0.6)
+  
+pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/RDA/figures/comparison/GCMs/correlation_future_predictions_GCMs_",set,".pdf"));corrplot(correlation_future, method = "number", addrect = 2, col = c("darkorange","darkred"), type = "lower", tl.col = "black", tl.cex = 0.6, number.cex = 0.6);dev.off()
+
+}
+```
+
+
+```{r mean GO across 5 GCM}
+
+list_models_clim<- c("GFDL_ESM4","IPSL_CM6A_LR","MPI_ESM1_2_HR","MRI_ESM2_0","UKESM1_0_LL") 
+
+for(x in 1:length(list_set)){
+  
+  set <- list_set[x]
+  all_GO <- data.frame()
+  
+ for(i in 1:length(list_models_clim)){
+   
+   model <- list_models_clim[i]
+   GO_data <- get(paste0("Genomic_offset_Taxus_Adapcon_Gentree_RDA_", set, "_future_", model))
+   colnames(GO_data) <- c("Population","GO")
+   all_GO <- rbind(all_GO,GO_data)
+ }
+    
+  mean_GO <- aggregate(GO ~ Population, data = all_GO, FUN = mean, na.rm = TRUE)
+
+colnames(mean_GO) <- c("Population", "Mean_GO")  # Rename the columns for clarity
+
+assign(paste0("GO_T_Adapcon_Gentree_RDA_", set, "_future_mean"),mean_GO)
+
+#save
+file_save<- get(paste0("GO_T_Adapcon_Gentree_RDA_", set, "_future_mean"))
+  name <- paste0("GO_T_Adapcon_Gentree_RDA_", set, "_future_mean")
+save(list = name,file=paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/RDA/data/",name,".Rdata"))
+}
+```
+
+
+```{r rank comparison across GCMs}
+
+list_models_clim<- c("mean","GFDL_ESM4","IPSL_CM6A_LR","MPI_ESM1_2_HR","MRI_ESM2_0","UKESM1_0_LL") 
+
+# List of SNP sets
+list_sets <- c("all","random","random_same_AF","LC","MC","CG","random_AF_V2","all_outliers")
+
+# Initialize an empty list to store data for all SNP sets
+plot_data <- list()
+
+# Load the RColorBrewer package for dynamic color palettes
+library(RColorBrewer)
+
+
+color_palette <- c("#FF69B4","red","blue","orange","black","green")
+
+# Initialize a vector to keep track of top populations across all GCMs
+
+# Loop over each SNP set
+for (x in 1:length(list_sets)) {
+  
+  set <- list_sets[x]
+  # Initialize an empty data frame for all models in the current SNP set
+  ranks_df <- data.frame()
+  
+  all_top_populations <- character(0)
+
+  # Loop over each climatic model
+  for (i in 1:length(list_models_clim)) {
+    
+    model <- list_models_clim[i]
+    # Get the genomic offset data for the current SNP set and model
+    GO_data <- get(paste0("GO_T_Adapcon_Gentree_RDA_", set, "_future_", model))
+    colnames(GO_data) <- c("Population", "GO")
+    
+    # Rank the populations by genomic offset (highest GO gets rank 1)
+    GO_data$Rank <- rank(-GO_data$GO, ties.method = "first")
+    
+    # Add columns for the climatic model and SNP set
+    GO_data$Model <- model
+    GO_data$Set <- set
+    
+    # Append to ranks dataframe
+    ranks_df <- rbind(ranks_df, GO_data)
+    
+    # Find the top 1 population for the current model (highest GO = rank 1)
+    top_1_population <- GO_data %>% top_n(1, GO) %>% pull(Population)
+    
+    # Add this top 1 population to the list of all top populations (avoid duplicates)
+    all_top_populations <- unique(c(all_top_populations, top_1_population))
+  }
+  
+  # Convert 'Model' and 'Set' to factors for plotting
+  ranks_df$Model <- factor(ranks_df$Model, levels = list_models_clim)
+  ranks_df$Set <- factor(ranks_df$Set, levels = list_sets)
+  
+  # Adjust the number of colors if there are more top populations than the current color palette
+  num_top_populations <- length(all_top_populations)
+  if (num_top_populations > length(color_palette)) {
+    color_palette <- colorRampPalette(brewer.pal(9, "Set1"))(num_top_populations)  # Use a different palette if needed
+  }
+  
+  # Assign a unique color to each of the top populations (those ranked 1 in any model)
+  population_colors <- setNames(color_palette[1:num_top_populations], all_top_populations)
+  
+  # Create a new column to store color assignments (highlight only rank 1 populations for each GCM)
+  ranks_df$Highlight <- ifelse(ranks_df$Population %in% all_top_populations, ranks_df$Population, "Other")
+  
+  # Map colors for top populations and grey for the rest
+  ranks_df$Color <- ifelse(ranks_df$Highlight == "Other", "grey", population_colors[ranks_df$Highlight])
+  
+  # Store the data frame for this SNP set in the plot_data list
+  plot_data[[set]] <- ranks_df
+  
+  # Generate the plot for this SNP set
+  p <- ggplot(ranks_df, aes(x = Model, y = Rank, group = Population, color = Color)) +
+    geom_line(alpha = 0.7, size = 0.8) +
+    geom_point(size = 2) +
+    scale_y_reverse() +  # Reverse rank (1 = top)
+    scale_color_identity() +  # Use the color as is (no color scale)
+    labs(
+      title = paste("RDA Rank Variability for SNP Set:", set),
+      x = "Climatic Models", y = "Population Rank"
+    ) +
+    theme_minimal() +
+    theme(
+      legend.position = "none",  # Remove population legend
+      panel.grid.minor = element_blank(),
+      strip.text = element_text(size = 10, face = "bold"),
+      legend.title = element_text(size = 10)
+    )
+  
+  print(p)  # Display plot for this SNP set
+  
+  #save
+     pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/RDA/figures/comparison/GCMs/GO_rank_comparison_",set,".pdf"));print(p);dev.off()
+  
+}
+```
+
+We are going to use the mean of the GO predictions across the 5 GCMs as future GO
+
+
+### Comparison GO predictions across SNPs sets
 
 ### Graphical visualization
 
 We can plot the genomic offset values for each population. As before, we can apply the cut_number function to rescale the values to align with the color scale used for other genomic offsets, such as GF.
 ```{r plot genomic offset,eval=F, echo=T}
 list_period <- c("present","future")
-list_set <- c("all","random","random_same_AF","LC","MC","CG")
+list_set <- c("all","random","random_same_AF","LC","MC","CG","random_AF_V2","all_outliers")
 
 for(i in 1:length(list_period)){
   
@@ -1046,7 +1509,51 @@ for(i in 1:length(list_period)){
   for(x in 1: length(list_set)){
     
     set <- list_set[x]
-    name_file <- paste0(set,"_",period)
+    
+    if(period == "future"){
+      
+      for (j in 1:length(list_models_clim)) {
+    
+    model_clim <- list_models_clim[j]
+    
+    name_file <- paste0(set,"_",period,"_",model_clim)
+    GO_df <- get(paste0("GO_T_Adapcon_Gentree_RDA_",name_file))
+    
+     #first, we need to add the coordinates
+Genomic_offset_coord <- merge(GO_df,meta_data_pop_order[,c(2,4,5)],"Population")
+
+#transform longitude and latitude to numeric variables
+Genomic_offset_coord <- Genomic_offset_coord %>% mutate(Longitude=as.numeric(Longitude),Latitude=as.numeric(Latitude))
+
+
+colors <- c( "darkgreen", "#FDF7B3","#FC4E2A","#BD0026","darkorchid4")
+#background map
+admin <- ne_countries(scale = "medium", returnclass = "sf")
+      
+plot <- ggplot(data = Genomic_offset_coord) + 
+  geom_sf(data = admin, fill = gray(0.92), size = 0) +
+  geom_point(aes(x = Longitude, y = Latitude, fill = cut_number(Genomic_offset_coord[,2], n = 5)), shape = 21,size=3, color = "black") +
+  scale_fill_manual(
+    values = colors,
+    labels = c("low values","","","","high values"),
+    drop = FALSE,na.translate = FALSE)+  # Ensure all levels are shown in the legend
+  geom_sf(data = admin, fill = NA, size = 0.1) +
+  coord_sf(xlim = c(-10, 30), ylim = c(35, 62), expand = FALSE) +
+  xlab("Longitude") + ylab("Latitude") +
+  guides(fill = guide_legend(title = "Genomic offset")) +
+  ggtitle(paste0("Genomic offset across populations ",set," ",period,"_",model_clim)) +
+  theme_bw(base_size = 11) +
+  theme(legend.position="right", panel.grid = element_blank(), strip.text = element_text(size=11),plot.title = element_text(hjust = 0.5,color = "Black",face="italic"))
+      
+print(plot) 
+
+#save
+     pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/RDA/figures/GO/GCMs_separate_and_mean/future/GO_RDA_standard_across_populations_",set,"_",period,"_",model_clim,".pdf"));print(plot);dev.off()
+      }
+      
+} else {
+        
+         name_file <- paste0(set,"_",period)
     GO_df <- get(paste0("GO_T_Adapcon_Gentree_RDA_",name_file))
     
      #first, we need to add the coordinates
@@ -1078,14 +1585,15 @@ plot <- ggplot(data = Genomic_offset_coord) +
 print(plot) 
 
 #save
-     pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/RDA/figures/GO/GO_RDA_standard_across_populations_",set,"_",period,".pdf"));print(plot);dev.off()
-    
+     pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/RDA/figures/GO/GCMs_separate_and_mean/present/GO_RDA_standard_across_populations_",set,"_",period,".pdf"));print(plot);dev.off()
+        
+    } 
   }
 }
 ```
 
 ```{r graph rmarkdown 5, echo=FALSE}
-list_period_rmarkdown <- c("present","future")
+list_period_rmarkdown <- c("present","future_mean")
 list_set_rmarkdown <- c("LC")
 
 for(i in 1:length(list_period_rmarkdown)){
@@ -1139,7 +1647,7 @@ correlation_present <- cor(df_tot_GO_predictions_present[,-1])
 corrplot(correlation_present, method = "number", addrect = 2, col = c("darkorange","darkred"), type = "lower", tl.col = "black", tl.cex = 0.6, number.cex = 0.6)
 
 
-df_tot_GO_predictions_future <- data.frame(Population=GO_T_Adapcon_Gentree_RDA_random_present[,1],GO_all_Fut=GO_T_Adapcon_Gentree_RDA_all_future[,2],GO_rand_Fut=GO_T_Adapcon_Gentree_RDA_random_future[,2],GO_rand_same_AF_Fut=GO_T_Adapcon_Gentree_RDA_random_same_AF_future[,2],GO_LC_Fut=GO_T_Adapcon_Gentree_RDA_LC_future[,2],GO_MC_Fut=GO_T_Adapcon_Gentree_RDA_MC_future[,2],GO_CG_Fut=GO_T_Adapcon_Gentree_RDA_CG_future[,2],elevation=as.numeric(meta_data_pop_order$Elevation.DEM_90m.))
+df_tot_GO_predictions_future <- data.frame(Population=GO_T_Adapcon_Gentree_RDA_random_present[,1],GO_all_Fut=GO_T_Adapcon_Gentree_RDA_all_future_mean[,2],GO_rand_Fut=GO_T_Adapcon_Gentree_RDA_random_future_mean[,2],GO_rand_same_AF_Fut=GO_T_Adapcon_Gentree_RDA_random_same_AF_future_mean[,2],GO_LC_Fut=GO_T_Adapcon_Gentree_RDA_LC_future_mean[,2],GO_MC_Fut=GO_T_Adapcon_Gentree_RDA_MC_future_mean[,2],GO_CG_Fut=GO_T_Adapcon_Gentree_RDA_CG_future_mean[,2],GO_random_AF_V2_Fut=GO_T_Adapcon_Gentree_RDA_random_AF_V2_future_mean[,2],GO_all_outliers_Fut=GO_T_Adapcon_Gentree_RDA_all_outliers_future_mean[,2],elevation=as.numeric(meta_data_pop_order$Elevation.DEM_90m.))
 
 correlation_future <- cor(df_tot_GO_predictions_future[,-1])
 corrplot(correlation_future, method = "number", addrect = 2, col = c("darkorange","darkred"), type = "lower", tl.col = "black", tl.cex = 0.6, number.cex = 0.6)
@@ -1164,7 +1672,7 @@ for(i in 1:length(list_set)){
   set <- list_set[i]
   
   period_1 <- c("present")
-  period_2 <- c("future")
+  period_2 <- c("future_mean")
   
   df_pres <- get(paste0("GO_T_Adapcon_Gentree_RDA_",set,"_",period_1))
   df_fut <- get(paste0("GO_T_Adapcon_Gentree_RDA_",set,"_",period_2))
@@ -1210,7 +1718,7 @@ for(i in 1:length(list_set_rmarkdown)){
   
   set <- list_set_rmarkdown[i]
   period_1 <- c("present")
-  period_2 <- c("future")
+  period_2 <- c("future_mean")
   df_pres <- get(paste0("GO_T_Adapcon_Gentree_RDA_",set,"_",period_1))
   df_fut <- get(paste0("GO_T_Adapcon_Gentree_RDA_",set,"_",period_2))
   #df
@@ -1242,7 +1750,7 @@ trend_plot <- ggplot(df_GO, aes(x = Period, y = Values, group = Population)) +
 
 We should consider that while the values may be similar, the ranking of populations could differ. We will investigate this further with rank graphical visualization
 ```{r Rank of outliers populations predicted GO,eval=F, echo=T}
-list_period <- c("present","future")
+list_period <- c("present","future_mean")
 list_set <- c("all","random","random_same_AF","LC","MC","CG")
 
 for(i in 1:length(list_period)){
@@ -1294,7 +1802,7 @@ for(i in 1:length(list_period)){
 ```
 
 ```{r graph rmarkdown 7, echo=FALSE}
-list_period_rmarkdown <- c("present","future")
+list_period_rmarkdown <- c("present","future_mean")
 list_set_rmarkdown  <- c("LC","MC")
 
 for(i in 1:length(list_period_rmarkdown)){

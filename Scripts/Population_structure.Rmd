@@ -26,6 +26,9 @@ library(scatterpie)
 library(ggplot2)
 library(dplyr)
 library(writexl)
+library(sf)
+library(ggstar)
+library(ggspatial)
 ```
 
 # Introduction
@@ -33,6 +36,113 @@ library(writexl)
 In this script, we studied the population structure of *Taxus baccata* using the Adapcon-Gentree dataset, which contains 8252 SNPs, 452 trees and 4.37% of NAs.
 We analysed the population structure using PCA and STRUCTURE software.
 
+# Distribution map
+
+## Common garden and range-wide populations
+
+First, we can plot the populations in geographical space to gain insight into the geographical structure before looking at the genetic structure. We can plot the 29 populations for which we are calculating genomic indices, but also the 26 populations planted under common garden conditions used to evaluate the genomic offset predictions. 
+
+```{r metadata}
+#load metadata
+meta_data_vcf <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Samples/samples_taxus_baccata_adapcon_gentree.csv",h=T,sep=";",dec=",")
+
+meta_data_pop <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Populations/taxus_sample_29pop.csv",h=T,sep=";",dec=",")
+
+meta_data_pop_order <- meta_data_pop[order(meta_data_pop$Population),]
+```
+
+```{r distribution of English yew}
+shapefile <- st_read("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/shapefiles/Taxus_baccata_plg_clip.shp")
+
+# Clonal bank location
+clonal_bank_lat <- 41.23
+clonal_bank_long <- -4.0125
+
+#Meta_data Clonal bank populations
+meta_data_CG <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Populations/Taxus_Spain_pop.csv",h=T,sep=";",dec=",")
+meta_data_CG$Lat <- as.numeric(meta_data_CG$Lat)
+meta_data_CG$Lon <- as.numeric(meta_data_CG$Lon)
+
+#29 pop
+meta_data_pop_order$Latitude <- as.numeric(meta_data_pop_order$Latitude)
+meta_data_pop_order$Longitude<- as.numeric(meta_data_pop_order$Longitude)
+
+meta_data_pop_order$pop_abbrev <- c("ANC","BLI","BOM","BRA","BUJA","BUJG","CAR","CED","PDT","UMB","GOR","HAR","HHR","JUR","CHO","OLY","VOU","PAT","RAS","RWM","BAU","SAV","SDF","SUE","UNS","VAL","VIS","WAL","YEW")
+```
+
+
+```{r distribution map}
+admin <- ne_countries(scale = "medium", returnclass = "sf")
+
+plot <- ggplot(data = meta_data_pop_order) + 
+  geom_sf(data = admin, fill = gray(0.92), size = 0) +
+  geom_sf(data = shapefile, fill = "#d9f2d9", color = "black", size = 0.2) +  # Adding shapefile
+  geom_point(data=meta_data_CG,aes(x = Lon, y = Lat), fill = "black", size = 2, shape = 17, color = "#FF99FF") +
+  geom_point(aes(x = Longitude, y = Latitude), fill = "black", size = 2, shape = 21, color = "black") +
+  geom_star(aes(x = clonal_bank_long, y = clonal_bank_lat), color = "red", size = 3.5, fill = "red", starshape = 1,show.legend=TRUE) +
+  geom_sf(data = admin, fill = NA, size = 0.1) +  
+  coord_sf(xlim = c(-10.5, 30), ylim = c(35, 62), expand = FALSE) +
+  geom_text(data = meta_data_pop_order, aes(x = Longitude, y = Latitude+0.7, label = pop_abbrev,fontface = "bold"), size = 2.5, color = "black") +
+  annotation_scale(location = "br", width_hint = 0.3) + # Scale bar at bottom left
+  annotation_north_arrow(location = "tl", which_north = "true", 
+                         pad_x = unit(-0.2, "cm"), pad_y = unit(0.08, "cm"),
+                         style = north_arrow_fancy_orienteering) + # Compass rose
+  xlab("Longitude") + ylab("Latitude") +
+  theme_bw(base_size = 11) +
+  theme(
+    legend.position = "none", # Remove the legend
+    strip.text = element_text(size = 11),
+    plot.title = element_text(hjust = 0.5, color = "Black", face = "italic")
+  ) 
+
+print(plot)
+
+#pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/map_sampled/Distribution map_CG_Adapt_new.pdf");print(plot);dev.off()
+```
+
+## All populations (CG+range-wide+SSR)
+
+```{r SSR pop data}
+data <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/Data_SSR_Taxus.csv",h=T,sep=";",dec=",")
+
+meta_data <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/Meta_data_pop_taxus_migration.csv",h=T,sep=";",dec=",")
+
+merge_data <- merge(meta_data,data,"Number_pop")
+
+df <- data.frame(table(merge_data$Population))
+colnames(df) <- c("Population","N_pop")
+df_allpop <- merge(meta_data,df,"Population")
+```
+
+```{r distribution map}
+admin <- ne_countries(scale = "medium", returnclass = "sf")
+
+plot <- ggplot(data = meta_data_pop_order) + 
+  geom_sf(data = admin, fill = gray(0.92), size = 0) +
+  geom_sf(data = shapefile, fill = "#d9f2d9", color = "black", size = 0.2) +  # Adding shapefile
+  geom_point(data=df_allpop,aes(x=LONG,y=LAT),fill="lightcoral",size=2,shape=21,color="black")+
+  geom_point(data=meta_data_CG,aes(x = Lon, y = Lat), fill = "#FF99FF", size = 2, shape = 21, color = "black") +
+  geom_point(aes(x = Longitude, y = Latitude), fill = "black", size = 2, shape = 21, color = "black") +
+  #geom_star(aes(x = clonal_bank_long, y = clonal_bank_lat), color = "black", size = 3.5, fill = "red", starshape = 1,show.legend=TRUE) +
+  geom_sf(data = admin, fill = NA, size = 0.1) +  
+  coord_sf(xlim = c(-10.5, 60), ylim = c(32.5, 62), expand = FALSE) +
+  #geom_text(data = meta_data_pop_order, aes(x = Longitude, y = Latitude+0.7, label = pop_abbrev,fontface = "bold"), size = 2.5, color = "black") +
+  annotation_scale(location = "br", width_hint = 0.3) + # Scale bar at bottom left
+  annotation_north_arrow(location = "tl", which_north = "true", 
+                         pad_x = unit(-0.2, "cm"), pad_y = unit(0.08, "cm"),
+                         style = north_arrow_fancy_orienteering) + # Compass rose
+  xlab("Longitude") + ylab("Latitude") +
+  theme_bw(base_size = 11) +
+  theme(
+    legend.position = "none", # Remove the legend
+    strip.text = element_text(size = 11),
+    plot.title = element_text(hjust = 0.5, color = "Black", face = "italic")
+  ) 
+
+print(plot)
+
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/map_sampled/All_sampled_location_Climatic_envelope.pdf");print(plot);dev.off()
+```
 
 # PCA
       
@@ -40,12 +150,6 @@ First, we performed a PCA to study the population structure at both the individu
       
 ## Individual-level
 
-```{r metadata}
-#load metadata
-meta_data_vcf <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Samples/samples_taxus_baccata_adapcon_gentree.csv",h=T,sep=";",dec=",")
-
-meta_data_pop <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Populations/taxus_sample_29pop.csv",h=T,sep=";",dec=",")
-```
 
 We first performed a scree plot analysis to determine how much of the genetic variation is explained by the PCs axis. 
 ```{r  screeplot: number of PC selection and PCA}
@@ -202,6 +306,64 @@ pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/STRUCTURE/PCA/PC
 Pca_genetic(data,names,axis,meta_data)
 
 ```
+
+Without the percentage of missing data
+```{r PCA wo missing data}
+#meta_data
+meta_data_vcf_452 <- meta_data_vcf[meta_data_vcf$VCF_ID %in% row.names(gen_data_new),]
+
+#Initial parameters
+data <-Pcadapt_object #dataframe coming from the return of the screeplot_genetic function 
+names <- gen_data_new #initial dataframe
+axis <- 2 #number of retained axis based on the screeplot
+meta_data <- meta_data_vcf_452#meta data
+
+
+#color per country
+
+#for loop to do it for multiple PC axis like 1-2 but also 1-3, 2-3 etc
+ Pca_genetic <- function(data, names, num_axes, meta_data) {
+   #we can create 2 loops that would perform the Pca_function for each combination of axis retained: 
+  for (i in 1:(num_axes - 1)) { #here, the first loop will select axis between 1 and numb_axis-1 so basically, if we take 3 axis, i will take values of 1 then 2, so PCx will ether be 1 or 2.
+    for (j in (i + 1):num_axes) { #here, the second loop within the first one will take the values of j from i +1 to num axis so if num axis=3, we will have j ranging from 2 to 3 when i=1 and j=3 when i =2
+      #to summaries, the loops will perform the function for the combination of axis: 1-2,1-3 and 2-3 for 3 retained axis. 
+      
+      PCx <- i
+      PCy <- j
+      
+      # Calculate explained variance for chosen PCs
+      explained_variance <- data.frame(t(round((data$singular.values[PCx:PCy]^2) * 100, digits = 1)))
+      colnames(explained_variance) <- c("PCx", "PCy")
+      
+      #store the scores along the retained PC axis in a dataframe
+      score_Pca_imputed <- data.frame(data$scores[, c(PCx,PCy)], row.names (names))
+      colnames(score_Pca_imputed) <- c(paste0("PC", PCx), paste0("PC", PCy), "VCF_ID")
+      
+      # add country, population information
+      PCa_df_imputed <- merge(score_Pca_imputed, meta_data, "VCF_ID")
+      
+      # genetic PCA
+      ggplot_representation <- ggplot() +
+        geom_point(data = PCa_df_imputed, aes(PCa_df_imputed[,2],PCa_df_imputed[,3], color = Country)) +
+        scale_colour_manual(name = "Country",
+                            values = c("orangered3", "gold2", "darkorchid3", "navyblue", "turquoise2", "green3", "blue", "red", "black", "gray", "orange", "darkgreen")) +
+        xlab(paste0("PC", PCx, " ", "(", explained_variance$PCx, "%", ")")) + 
+        ylab(paste0("PC", PCy, " ", "(", explained_variance$PCy, "%", ")"))
+      
+      print(ggplot_representation)
+#Save
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/STRUCTURE/PCA/PCA_indiv_level_color_countries_wo_label_NA.pdf");print(ggplot_representation);dev.off()      
+      
+    }
+  }
+ }
+ 
+#run the function 
+Pca_genetic(data,names,axis,meta_data)
+
+
+```
+
    
 ## Population-level
 
@@ -340,9 +502,7 @@ Then, we calculated the mean Q-value per population and for each K, plotted it i
 ```{r loop for output of structure,eval=F, echo=T}
 
 for(i in 2:10){
-
   input <- paste0("K",i)
-  
   data <- read.table(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/STRUCTURE/clumpp_output/",input,"_mean.txt"))
   
   k_full <- data.frame(name[,c(1)],data[,-c(1:5)])
@@ -360,9 +520,7 @@ k_full_bis <- k_full[, sorted_columns, drop = FALSE]
 #add ID again
 k_full_final <- data.frame(k_full[,1],k_full_bis);colnames(k_full_final) <- c("VCF_ID", paste0("Group",6:ncol(data)-5))
   
-  
   k_with_pop <- merge(k_full_final,meta_data_vcf,"VCF_ID") %>% merge(meta_data_pop,"Population")
-  
   
   k_final <- k_with_pop %>% dplyr::select(-c("Country.y","N","Elevation.DEM_90m."))
   
@@ -376,15 +534,8 @@ k_full_final <- data.frame(k_full[,1],k_full_bis);colnames(k_full_final) <- c("V
   
   mean_admixture_pop$Population_bis <- c("Anc","Blind","Bohin","Brank","Buja_A","Buja_G","Cardo","Castle","Fonte","Foresta","Gorenj","Harm","Horn","Jura","Cholo","Olym","Vour","Pater","Rasc","Rouds","Baume","Saro","Serra","Sueve","Unska","Valdi","Vise","Wal","Yew")
   
-  
-  
   groups <- paste0("Group",6:ncol(data)-5)
-  
-  
   admin <- ne_countries(scale = "medium", returnclass = "sf")
-
-  
-  
 my.colors<- c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd","#7f7f7f","#bcbd22", "#c49c94", "#f7b6d2", "darkgreen")
 # Plot the map with scatterpie
 map_pop <- ggplot() + 
@@ -407,11 +558,7 @@ map_pop <- ggplot() +
   theme_minimal() +
   labs(title = paste0("Genetic Structure for"," ", input," ", "groups"),fill="STRUCTURE groups")
 
-
 print(map_pop)
-  
-
-
  #save
 pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/Structure/Map_",input,"_STRUCTURE.pdf"));print(map_pop);dev.off()
 
@@ -419,11 +566,8 @@ pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_v
 ```
 
 ```{r example k3, echo=FALSE}
-
 #example k=3 for the HTML file
-
 for(i in 3){
-
   input <- paste0("K",i)
   
   data <- read.table(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/STRUCTURE/clumpp_output/",input,"_mean.txt"))
@@ -442,11 +586,7 @@ k_full_bis <- k_full[, sorted_columns, drop = FALSE]
 
 #add ID again
 k_full_final <- data.frame(k_full[,1],k_full_bis);colnames(k_full_final) <- c("VCF_ID", paste0("Group",6:ncol(data)-5))
-  
-  
   k_with_pop <- merge(k_full_final,meta_data_vcf,"VCF_ID") %>% merge(meta_data_pop,"Population")
-  
-  
   k_final <- k_with_pop %>% dplyr::select(-c("Country.y","N","Elevation.DEM_90m."))
   
   mean_admixture_pop <- k_final %>% 
@@ -458,17 +598,11 @@ k_full_final <- data.frame(k_full[,1],k_full_bis);colnames(k_full_final) <- c("V
   mean_admixture_pop$Longitude=as.numeric(mean_admixture_pop$Longitude);mean_admixture_pop$Latitude=as.numeric(mean_admixture_pop$Latitude)
   
   mean_admixture_pop$Population_bis <- c("Anc","Blind","Bohin","Brank","Buja_A","Buja_G","Cardo","Castle","Fonte","Foresta","Gorenj","Harm","Horn","Jura","Cholo","Olym","Vour","Pater","Rasc","Rouds","Baume","Saro","Serra","Sueve","Unska","Valdi","Vise","Wal","Yew")
-  
-  
-  
-  groups <- paste0("Group",6:ncol(data)-5)
-  
-  
-  admin <- ne_countries(scale = "medium", returnclass = "sf")
 
-  
-  
+  groups <- paste0("Group",6:ncol(data)-5)
+  admin <- ne_countries(scale = "medium", returnclass = "sf")
 my.colors<- c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd","#7f7f7f","#bcbd22", "#c49c94", "#f7b6d2", "darkgreen")
+
 # Plot the map with scatterpie
 map_pop <- ggplot() + 
   geom_sf(data = admin, fill = gray(0.92), size = 0) +#background of the map
@@ -489,7 +623,6 @@ map_pop <- ggplot() +
   coord_sf(xlim = c(-10, 30), ylim = c(36, 65), expand = FALSE) +#extension of the map
   theme_minimal() +
   labs(title = paste0("Genetic Structure for"," ", input," ", "groups"),fill="STRUCTURE groups")
-
 
 print(map_pop)
 }
@@ -500,7 +633,6 @@ Interpretation: Based on the Best K from CLUMPAK and the biological relevance, w
 
 Finally, we saved the scores for K=3 to used them as population structure proxy in variance partitioning models. 
 ```{r save k3 scores}
-
 #we need to run the function only for k=3 and save the dataframe
 data <- read.table("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/STRUCTURE/clumpp_output/K3_mean.txt")
   
@@ -518,11 +650,7 @@ k_full_bis <- k_full[, sorted_columns, drop = FALSE]
 
 #add ID again
 k_full_final <- data.frame(k_full[,1],k_full_bis);colnames(k_full_final) <- c("VCF_ID", paste0("Group",6:ncol(data)-5))
-  
-  
   k_with_pop <- merge(k_full_final,meta_data_vcf,"VCF_ID") %>% merge(meta_data_pop,"Population")
-  
-  
   k_final <- k_with_pop %>% dplyr::select(-c("Country.y","N","Elevation.DEM_90m."))
   
   mean_admixture_pop <- k_final %>% 
@@ -536,8 +664,6 @@ k_full_final <- data.frame(k_full[,1],k_full_bis);colnames(k_full_final) <- c("V
   
   save(Cluster_score_STRUCTURE_T_Adapcon_gentree,file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/GEA/Structure_proxy/Cluster_score_STRUCTURE_T_Adapcon_gentree.Rdata")
 ```
-
-
 
 
 

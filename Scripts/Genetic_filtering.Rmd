@@ -34,16 +34,15 @@ library(tibble)
 # Introduction
     
 
-This script filters the genetic data of *Taxus baccata*, which is merged from two datasets: Adapcon and Gentree. It then creates genetic files in the correct format for several analyses. Two different sets of filters are applied depending on the analysis:
+This script filters the genetic data of *Taxus baccata*, which is merged from two datasets: Adapcon and Gentree. It then creates genetic files in the correct format for several analyses. Two different sets of filters are applied depending on the analysis:  
 
 One for population structure (without correcting for minor allele count (MAC) and not imputed for missing data).
-One for GEA and other analyses (correcting for MAC and imputing missing data using the most common genotype per main gene pool).
-For both datasets, we first followed the GATK Best Practices, third version (Auwera and O'Connor 2020), with the filter expression: “MQ < 40 || MQRankSum > 12.5 || DP < 10.0 || QUAL < 50.0 || QD < 1.5 || FS > 60.0 || ReadPosRankSum > -8.” These filters were applied using GATK (version 4.2.3.0) and VCFtools (version 0.1.16). 
+One for GEA and other analyses (correcting for MAC and imputing missing data using the most common genotype per main gene pool).  
+For both datasets, we first followed the GATK Best Practices, third version (Auwera and O'Connor 2020), with the filter expression: “MQ < 40 || MQRankSum > 12.5 || DP < 10.0 || QUAL < 50.0 || QD < 1.5 || FS > 60.0 || ReadPosRankSum > -8.” These filters were applied using GATK (version 4.2.3.0) and VCFtools (version 0.1.16).  
   
 # Population stucture filtering
   
 ## Data  
-
 
 The raw vcf file contains 11374 SNPs, 490 individuals and 8.76 % of missing data
 
@@ -52,6 +51,7 @@ vcf <- read.vcfR("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccat
 meta_data_vcf=read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Samples/samples_taxus_baccata_adapcon_gentree.csv",h=T,sep=";",dec=",")
 
 meta_data_pop <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Populations/taxus_sample_29pop.csv",h=T,sep=";",dec=",")
+
 ```
 
 ## Filtering steps 
@@ -381,7 +381,7 @@ save(Gen_matrix_imp_T_Adapcon_Gentree_475_8616_BAYPASS,file="C:/Users/tfrancisco
 
 ### Population-level genomic data
     
-To work at the population-level, we need to calculate allelic frequencies for each snp per population. 
+To work at the population-level, we need to calculate allelic frequencies for each SNP per population. 
 
 ```{r initialisation}
 #add VCF_ID but normally it will be in the imputated file
