@@ -27,17 +27,24 @@ library(writexl)
 
 # Introduction
 
-This script allows visualisation and selection of the set of outlier loci to be used for genomic offset calculation. To select candidate SNPs, we performed six GEA methods to detect SNPs potentially associated with climatic variables: RDA, pRDA, BAYPASS, LFMM and GF-raw, GF-corrected.  
-  
-Each of these methods provides a set of candidate SNPs. To select our outliers, we retained only those candidates that were identified by at least two methods and were not in high linkage disequilibrium (LD). 
-We performed outlier detection using a less conservative or more conservative set of thresholds:   
-- Less conservative: FDR < 10%, top 5% and BF > 8, later referred to as LC.    
-- More conservative: FDR < 5%, top 1% and BF > 10, later called MC.  
+This script enables the visualisation and selection of outlier loci to be used for genomic offset calculations. We applied six GEA methods to identify SNPs potentially associated with climatic variables: RDA, pRDA, BAYPASS, LFMM, GF-raw, and GF-corrected.
+
+Each method produced a set of candidate SNPs. To define our final set of outliers, we retained only SNPs that: were identified by at least two methods, and were not in high linkage disequilibrium (LD).
+
+We considered two levels for outlier detection:  
+- Less conservative (LC): FDR < 10%, top 5%, and BF > 8  
+- More conservative (MC): FDR < 5%, top 1%, and BF > 10  
+
+In addition to the outlier sets, we defined a set of random markers that follow the same allele frequency distribution as the outliers, while matching their number of SNPs. This provides a neutral baseline for comparison.
+
+Finally, we also retained two broader reference sets: all SNPs from the filtered genomic dataset, and all candidate SNPs identified by at least one GEA method, regardless of overlap.
+
+These different SNP sets (stringent outliers, random markers, all candidates, and all SNPs) will be used in downstream analyses, including genomic offset estimation, to evaluate the robustness of predictions across marker subsets.
 
 # Load candidates SNPs 
 
 ```{r load data}
-#names of the files
+#Names of the files
 ##LC
 list_data_LC <- c("outliers_RDA_FDR10perc_T_Adapcon_gentree","outliers_pRDA_FDR10perc_T_Adapcon_gentree","outliers_T_adapcon_gentree_BAYPASS_BF_8","outliers_T_adapcon_gentree_LFMM_10perc","outliers_rank_based_top5perc_GF_raw","outliers_rank_based_top5perc_GF_corrected")
 
@@ -63,7 +70,7 @@ assign(paste0(name,"_set_MC"),get(set_MC))
 }
 ```
 
-We need to merge every set in a list
+We merged every set in a list
 ```{r format sets}
   #list of candidates
 list_candidates_LC<-list(RDA=RDA_set_LC[,1],pRDA=pRDA_set_LC[,1],BAYPASS=BAYPASS_set_LC[,1],LFMM=LFMM_set_LC[,1],GF_raw=GF_raw_set_LC,GF_corrected=GF_corrected_set_LC)
@@ -86,7 +93,7 @@ colnames(RDA_set_MC) <- c("Loci","p.value")
 colnames(pRDA_set_MC) <- c("Loci","p.value")
 ```
 
-# Plot to visualize the overlapping candidates SNPs
+# Plot to visualise the overlapping candidates SNPs
 
 ## Vendiagram plot
 
@@ -135,9 +142,11 @@ We can plot the sets in a Venn diagram to visualise the overlapping candidates (
 
 ## Upset plot
 
-The UpSet graph is more practical because the Venn diagram can only plot up to five circles, whereas we have six sets. With the ggVennDiagram function, the results can become cluttered and difficult to interpret. The UpSet graph also allows us to plot only the overlaps, leaving out the zero overlaps. This results in a simpler and more informative graph.
-```{r upset graph more practical than the venn diagram}
+We chose to visualise overlaps among candidate SNP sets using an UpSet graph rather than Venn diagrams. While Venn diagrams can only clearly represent up to five sets, our analysis involves six GEA methods. Using functions such as ggVennDiagram quickly becomes difficult to interpret when more than five sets are included.
+In contrast, the UpSet graph provides a cleaner and more informative representation by: displaying only the observed overlaps between methods (omitting zero intersections), allowing easy comparison of overlap sizes across multiple sets, highlighting subsets of SNPs detected by specific combinations of GEA methods.
+This makes the UpSet approach particularly usefull for our multi-method outlier detection framework.
 
+```{r upset graph more practical than the venn diagram}
 list_threshold <- c("LC","MC")
 
 for(i in 1:length(list_threshold)){
@@ -175,7 +184,7 @@ pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_v
 
 ## Overlapping SNPs by at least 2 GEA methods
 
-Now we can create a data frame with only the overlapping candidate of at least 2 methods: 
+Now we can create a data frame with only the overlapping candidate of at least 2 GEA methods: 
 ```{r Overlapping snp of at least 2 methods}
 for(i in 1:length(list_threshold)){
   
@@ -206,9 +215,15 @@ print(nrow(get(paste0("outliers_set_",threshold))))
 }
 ```
 
+```{r save outliers LC}
+save(outliers_set_LC, file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/set/outliers_set_LC.Rdata")
+```
+
+
 ## Linkage desequilibrium
 
-We can see that some of the outliers are on the same contig. This can bias the signals by giving more weight to regions of the genome with a higher concentration of SNPs in linkage disequilibrium (LD). This problem arises if we assume that the number of SNPs per contig is not size dependent; therefore, some contigs may be overrepresented due to stochastic events, potentially inflating their signals. To address this, we will remove SNPs that are in LD with other SNPs on the same contig. 
+During candidate SNP selection, we observed that some outliers were located on the same contig. This situation can bias downstream analyses because clusters of SNPs in strong linkage disequilibrium (LD) artificially increase the weight of particular genomic regions. This issue is especially problematic if the number of SNPs per contig is not proportional to contig size, as stochastic variation in marker density could lead to overrepresentation of certain contigs. This may be of concern or not depending on the study system.
+To mitigate this bias, we applied a LD pruning step within contigs, retaining only SNPs that were not in high LD with one another (< |0.7|). This ensures to reduces the inflation of signals due to physically linked SNPs.
 
 Linkage desequilibrium calculation: 
 ```{r LD}
@@ -219,7 +234,6 @@ for(i in 1:length(list_threshold)){
 #load genotypic data at the individual level
 load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/GEA/vcf_data_GEA.Rdata")
 genomic_matrix_LD <- vcf_data_GEA
-
 
 #subset the genomic matrix to only the outliers
 candidates_to_LD <- data.frame(genomic_matrix_LD[get(paste0("outliers_set_",threshold))$outliers])
@@ -267,7 +281,9 @@ png(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_v
 }
 ```
 
-For the LC set, 11 candidates were found to be in linkage disequilibrium (LD) with SNPs located on other contigs. We will retain these LD associations, as we are primarily interested in LD within a contig rather than between contigs. However, it is still possible that some of these 11 SNPs may be in LD with other SNPs within the same contig, so we may remove a few of them. For the MC set, there are no candidates in LD with SNPs on other contigs.
+For the less conservative (LC) set, 11 candidate SNPs were found to be in linkage disequilibrium (LD) with SNPs located on other contigs. We decided to retain these associations, since our filtering strategy focuses on removing LD within contigs rather than across different contigs. However, some of these 11 SNPs may also be in LD with other SNPs on the same contig; if this is the case, we will remove them to avoid overrepresentation of specific genomic regions.
+
+For the more conservative (MC) set, no candidate SNPs were detected in LD with SNPs on other contigs, so no further filtering was necessary.
 
 ```{r save LD corr, include=FALSE}
 #save
@@ -326,7 +342,6 @@ for(i in 1:length(list_threshold)){
 #Rdata
   save(list = paste0("outliers_set_final_overlapping_no_LD_",threshold,"_new_var"), file = paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/set/outliers_set_final_overlapping_no_LD_",threshold,"_new_var.Rdata"))
 
-
 #df
 outliers_set_final_overlapping_no_LD_new_var_df <- data.frame(get(paste0("outliers_set_final_overlapping_no_LD_",threshold,"_new_var")))
 
@@ -338,9 +353,9 @@ write_xlsx(get(paste0("outliers_set_final_overlapping_no_LD_",threshold,"_new_va
 
 # Random set of SNPs
 
-We can also extract a random set of SNPs to calculate the genomic offset (GO) and compare them with the candidate markers. To generate this random set, we need to randomly select the same number of SNPs as the candidate set (specifically, the less conservative one) from the full set of SNPs after removing all candidate SNPs identified by at least one GEA method.
+We can also extract a random set of SNPs to calculate the genomic offset (GO) and compare them with the candidate markers. To generate this random set, we randomly select the same number of SNPs as the candidate set (less conservative set) from the full set of SNPs after removing all candidate SNPs identified by at least one GEA method.
 
-In addition, we may wish to ensure that the selected random SNPs have the same proportion of different allelic frequencies as the outliers. This can be important because the proportion of allelic frequencies may explain the observed patterns (similar to GWAS). For example, if we have 44 outliers with 10 SNPs with allelic frequencies between 0 and 0.1, 22 between 0.5 and 0.6, and 12 between 0.9 and 1, we should select random SNPs that maintain this ratio of allelic frequencies. 
+In addition, we may wish to ensure that the selected random SNPs match the allele-frequency distribution of the outliers. This is important because the distribution of allele frequencies can influence observed patterns (analogous to GWAS). For example, if we have 44 outliers with 10 SNPs at allele frequencies 0–0.1, 22 at 0.5–0.6, and 12 at 0.9–1.0, we should select random SNPs that preserve these proportions of allele-frequency bins. 
 
 ## Random with same allelic frequencies
 
@@ -404,7 +419,7 @@ proportion_outliers$freq_class <- bin_labels
 colnames(proportion_outliers) <- c("num_outliers","freq_class")
 ```
 
-We then need to remove all SNPs identified as candidates by at least 1 GEA method to select a random SNP from this set:
+We then need to remove all SNPs identified as candidates by at least 1 GEA method to select random SNPs from this set:
 ```{r removed outliers snps}
 #we also removed outliers snps 
 #remove all the snps identified by candidates by at least 1 GEA method
@@ -459,9 +474,9 @@ df_candidates <- data.frame("name_snps"=all_candidates_set)
 check_outliers<- merge(df_candidates,random_set_taxus,"name_snps")
 ```
 
-### SNP from the ADAPCON-GENTREE only
+### Random following allelic frequency 
 
-We also performed a new selection of random SNPs without restricting our selection to only those SNPs that are common between both sets of genomic data. 
+We also performed a new selection of random SNPs. 
 
 First, we need to calculate the mean allelic frequency across populations for each SNP: 
 ```{r outliers_set_snps_ADAP_GENTR, eval=F, echo=T}
@@ -581,8 +596,6 @@ df_merge <- merge(random_set_taxus,random_set_taxus_not_overlap_both_dataset_V2,
 
 ## Random SNPs without taking the same allelic frequencies
 
-SNP from the overlapping set of ADAPCON-GENTREE and READAPT genomic markers
-
 We can also generate a set of random SNPs without considering the effect of allelic frequency. 
 ```{r neutral set of SNPs, eval=F, echo=T}
 #We can use the dataset of snps overlapping between both dataset and without the outliers:
@@ -615,7 +628,8 @@ df <- merge(df_selected,df_outliers,"name_snps")
 Finally, all neutrally selected SNPs are included in the common garden set of outliers and are not part of the candidates identified by at least one GEA method.
 
 *What is below is a draft explaining the GEA methods:* 
-```{r}
+
+```{r eval=FALSE, include=FALSE}
 #- RDA: Redundancy analysis. It's a linear multivariate methods (multivariate for response and explanatory variables) that do not account for population structure. It performs the analysis at the population level with allelic frequency data. 
 #- pRDA: Partial Redundancy analysis. It's an extension of the RDA accounting for population structure. As proxy of population structure, we used the PCs axis of a genetic PCA. It performs the analysis at the population level with allelic frequency data.
 #- BAYPASS: It's also a linear models accounting for population structure, univariate because it does consider explanatory variables one by one. The proxy of population structure is an omega matrix of genetic variation between populations using the core model of BAYPASS. It performs the analysis at the population level with data of the allele count at the population level.

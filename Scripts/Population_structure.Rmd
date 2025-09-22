@@ -29,21 +29,22 @@ library(writexl)
 library(sf)
 library(ggstar)
 library(ggspatial)
+library(tidyr)
 ```
 
 # Introduction
 
-In this script, we studied the population structure of *Taxus baccata* using the Adapcon-Gentree dataset, which contains 8252 SNPs, 452 trees and 4.37% of NAs.
-We analysed the population structure using PCA and STRUCTURE software.
+In this script, we studied the population structure of *T. baccata* using the population structure dataset, which contains 8252 SNPs, 452 trees and 4.37% of NAs.
+Population structure was assessed using principal component analysis (PCA) and STRUCTURE software.
 
 # Distribution map
 
 ## Common garden and range-wide populations
 
-First, we can plot the populations in geographical space to gain insight into the geographical structure before looking at the genetic structure. We can plot the 29 populations for which we are calculating genomic indices, but also the 26 populations planted under common garden conditions used to evaluate the genomic offset predictions. 
+First, we visualised the populations in geographical space to gain preliminary insight into spatial structure before examining genetic structure. We plotted the 29 populations used for calculating genomic indices, as well as the 26 populations planted in experimental site (clonal bank), which are used to evaluate genomic offset predictions. 
 
 ```{r metadata}
-#load metadata
+#Load metadata
 meta_data_vcf <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Samples/samples_taxus_baccata_adapcon_gentree.csv",h=T,sep=";",dec=",")
 
 meta_data_pop <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Populations/taxus_sample_29pop.csv",h=T,sep=";",dec=",")
@@ -54,7 +55,7 @@ meta_data_pop_order <- meta_data_pop[order(meta_data_pop$Population),]
 ```{r distribution of English yew}
 shapefile <- st_read("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/shapefiles/Taxus_baccata_plg_clip.shp")
 
-# Clonal bank location
+#Clonal bank location
 clonal_bank_lat <- 41.23
 clonal_bank_long <- -4.0125
 
@@ -102,7 +103,7 @@ print(plot)
 
 ## All populations (CG+range-wide+SSR)
 
-```{r SSR pop data}
+```{r SSR pop data, eval=FALSE, include=FALSE}
 data <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/Data_SSR_Taxus.csv",h=T,sep=";",dec=",")
 
 meta_data <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/Meta_data_pop_taxus_migration.csv",h=T,sep=";",dec=",")
@@ -114,7 +115,7 @@ colnames(df) <- c("Population","N_pop")
 df_allpop <- merge(meta_data,df,"Population")
 ```
 
-```{r distribution map}
+```{r distribution map all, eval=FALSE, include=FALSE}
 admin <- ne_countries(scale = "medium", returnclass = "sf")
 
 plot <- ggplot(data = meta_data_pop_order) + 
@@ -134,7 +135,7 @@ plot <- ggplot(data = meta_data_pop_order) +
   xlab("Longitude") + ylab("Latitude") +
   theme_bw(base_size = 11) +
   theme(
-    legend.position = "none", # Remove the legend
+    legend.position = "none", #Remove the legend
     strip.text = element_text(size = 11),
     plot.title = element_text(hjust = 0.5, color = "Black", face = "italic")
   ) 
@@ -146,43 +147,50 @@ pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/map_sampled/All_
 
 # PCA
       
-First, we performed a PCA to study the population structure at both the individual and population scales. We also checked whether the structure of some individuals/populations is influenced by the percentage of missing data. To do this, we plotted the size of the sampled points on the PCA based on their missing data percentage of missing data, while the position of the points will reflect their genetic composition. We used the PCADAPT as function to perform the PCA analysis at the Individual level, and RDA at the population level (DA without covariables, where only PCA is executed; see the explanation of redundancy analysis in the script for candidate detection))   
+First, we performed a PCA to examine population structure at both the individual and population levels. We also assessed whether the structure of certain individuals or populations was influenced by the percentage of missing data. To do this, point sizes on the PCA plots were scaled according to the proportion of missing data, while point positions reflected genetic composition. PCA at the individual level was conducted using the PCADAPT function, and at the population level using RDA without covariables (effectively performing PCA; see the RDA_candidate_detection script for details on redundancy analysis).  
       
 ## Individual-level
 
-
 We first performed a scree plot analysis to determine how much of the genetic variation is explained by the PCs axis. 
 ```{r  screeplot: number of PC selection and PCA}
-#selection number of axis => screeplot
-#initial parameters
+#Selection number of axis => screeplot
+#Initial parameters
 load(file = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/structure/Dataset_PCA_8252SNP_452IND.Rdata")
 gen_data_new <- Dataset_PCA_8252SNP_452IND[,-1]; row.names(gen_data_new) <- Dataset_PCA_8252SNP_452IND$VCF_ID
 data <- gen_data_new
-k <- 10 #its the number of groups set arbitrary
+k <- 10 #Its the number of groups set arbitrary
 
-#function
+#Function
 screeplot_genetic <- function(data,k){
   
   data_PCa <- data  %>% dplyr::select(-c("na_percentage_indiv")) %>% t() %>% data.frame()
-#format for pcadapt
+#Format for pcadapt
 data_pcadapt <- read.pcadapt(data_PCa)
 
-#perform the Pca
+#Perform the Pca
 Pcadapt_results <-pcadapt(data_pcadapt,K=k,method = "mahalanobis")
 
-# choose the number of axis
- # Create ggplot object
+#Choose the number of axis
+ #Create ggplot object
  screeplot_data <- data.frame(
     PC_axis = seq_along(Pcadapt_results$singular.values),
-    Explained_variance = Pcadapt_results$singular.values^2
+    Explained_variance = Pcadapt_results$singular.values^2*100
   )
+ 
+ screeplot_data$PC_axis <- as.factor(screeplot_data$PC_axis)
 
   gg_screeplot <- ggplot(screeplot_data, aes(x = PC_axis, y = Explained_variance)) +
-    geom_bar(stat = "identity") +
-    labs(x = "PC axis", y = "Explained variance") +
-    theme_minimal()
+    geom_bar(stat = "identity", fill = "darkgrey") +
+    labs(title = "PCA Scree Plot", x = "Principal Component", y = "Explained Variance (%)") +
+    theme_minimal(base_size = 14) +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold"))
   
-  # Display the screeplot
+  #  geom_bar(stat = "identity") +
+  # labs(x = "PC axis", y = "Explained Variance (%)") +
+   # theme_minimal()
+  
+  
+  #Display the screeplot
   gg_screeplot
   print(gg_screeplot)
   
@@ -190,41 +198,38 @@ Pcadapt_results <-pcadapt(data_pcadapt,K=k,method = "mahalanobis")
 pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/STRUCTURE/PCA/screeplot_PCA_indiv_level.pdf");print(gg_screeplot);dev.off()
 
   return(Pcadapt_results)
-  
-
 }
 
 Pcadapt_object <- screeplot_genetic(data,k)
-
 ```
 
-Interpretation: we retained the two first axes as the most important for detecting global patterns of population structure. 
+Interpretation: The first two PCA axes were retained as the most informative for detecting global patterns of population structure. 
 
 Plot of the PCA. 
 ```{r PCA}
-#meta_data
+#Meta_data
 meta_data_vcf_452 <- meta_data_vcf[meta_data_vcf$VCF_ID %in% row.names(gen_data_new),]
 
 #Initial parameters
-data <-Pcadapt_object #dataframe coming from the return of the screeplot_genetic function 
-names <- gen_data_new #initial dataframe
-axis <- 2 #number of retained axis based on the screeplot
-meta_data <- meta_data_vcf_452#meta data
+data <-Pcadapt_object #Dataframe coming from the return of the screeplot_genetic function 
+names <- gen_data_new #Initial dataframe
+axis <- 2 #Number of retained axis based on the screeplot
+meta_data <- meta_data_vcf_452#Meta data
 
 
-#color per country
+#Color per country
 
-#for loop to do it for multiple PC axis like 1-2 but also 1-3, 2-3 etc
+#For loop to do it for multiple PC axis like 1-2 but also 1-3, 2-3 etc
  Pca_genetic <- function(data, names, num_axes, meta_data) {
-   #we can create 2 loops that would perform the Pca_function for each combination of axis retained: 
-  for (i in 1:(num_axes - 1)) { #here, the first loop will select axis between 1 and numb_axis-1 so basically, if we take 3 axis, i will take values of 1 then 2, so PCx will ether be 1 or 2.
-    for (j in (i + 1):num_axes) { #here, the second loop within the first one will take the values of j from i +1 to num axis so if num axis=3, we will have j ranging from 2 to 3 when i=1 and j=3 when i =2
-      #to summaries, the loops will perform the function for the combination of axis: 1-2,1-3 and 2-3 for 3 retained axis. 
+   #We can create 2 loops that would perform the Pca_function for each combination of axis retained: 
+  for (i in 1:(num_axes - 1)) { #Here, the first loop will select axis between 1 and numb_axis-1 so basically, if we take 3 axis, i will take values of 1 then 2, so PCx will ether be 1 or 2.
+    for (j in (i + 1):num_axes) { #Here, the second loop within the first one will take the values of j from i +1 to num axis so if num axis=3, we will have j ranging from 2 to 3 when i=1 and j=3 when i =2
+      #In summary, the loops perform the function for all combinations of axes: 1–2, 1–3, and 2–3 when three axes are retained.
       
       PCx <- i
       PCy <- j
       
-      # Calculate explained variance for chosen PCs
+      #Calculate explained variance for chosen PCs
       explained_variance <- data.frame(t(round((data$singular.values[PCx:PCy]^2) * 100, digits = 1)))
       colnames(explained_variance) <- c("PCx", "PCy")
       
@@ -232,17 +237,30 @@ meta_data <- meta_data_vcf_452#meta data
       score_Pca_imputed <- data.frame(data$scores[, c(PCx,PCy)], row.names (names))
       colnames(score_Pca_imputed) <- c(paste0("PC", PCx), paste0("PC", PCy), "VCF_ID")
       
-      # add country, population information
+      #Add country, population information
       PCa_df_imputed <- merge(score_Pca_imputed, meta_data, "VCF_ID")
       
-      # genetic PCA
+      #Genetic PCA
       ggplot_representation <- ggplot() +
         geom_point(data = PCa_df_imputed, aes(PCa_df_imputed[,2],PCa_df_imputed[,3],size = names$na_percentage, color = Country)) +
         scale_colour_manual(name = "Country",
-                            values = c("orangered3", "gold2", "darkorchid3", "navyblue", "turquoise2", "green3", "blue", "red", "black", "gray", "orange", "darkgreen")) +
+                            values = c("orangered3", "gold2", "darkorchid3", "navyblue", "turquoise2", "green3", "blue", "red", "black", "gray", "orange", "darkgreen"),guide = guide_legend(override.aes = list(size = 4))) +
         scale_size(name = "Missing data (%)", breaks = c(0, 5, 10, 14), labels = c("0", "5", "10", "15")) +
         xlab(paste0("PC", PCx, " ", "(", explained_variance$PCx, "%", ")")) + 
-        ylab(paste0("PC", PCy, " ", "(", explained_variance$PCy, "%", ")"))
+        ylab(paste0("PC", PCy, " ", "(", explained_variance$PCy, "%", ")"))+
+        theme_bw(base_size = 11) +
+        theme(legend.position = "right", 
+              legend.title.align = 0.5,  # Center the title above the legend
+              panel.grid = element_blank(), 
+              strip.text = element_text(size = 11),
+              plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+              axis.title.x = element_text(size = 14),
+              axis.title.y = element_text(size = 14),
+              axis.text.x = element_text(size = 12),
+              axis.text.y = element_text(size = 12),
+              legend.title = element_text(size = 14),
+              legend.text = element_text(size = 12),
+              legend.key = element_rect(fill = "transparent", color = NA))
       
       print(ggplot_representation)
 #Save
@@ -252,34 +270,25 @@ pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/STRUCTURE/PCA/PC
   }
  }
  
-#run the function 
+#Run the function 
 Pca_genetic(data,names,axis,meta_data)
 
-
-
-#color per populations
-
 Pca_genetic <- function(data, names, num_axes, meta_data) {
-   #we can create 2 loops that would perform the Pca_function for each combination of axis retained: 
-  for (i in 1:(num_axes - 1)) { #here, the first loop will select axis between 1 and numb_axis-1 so basically, if we take 3 axis, i will take values of 1 then 2, so PCx will ether be 1 or 2.
-    for (j in (i + 1):num_axes) { #here, the second loop within the first one will take the values of j from i +1 to num axis so if num axis=3, we will have j ranging from 2 to 3 when i=1 and j=3 when i =2
-      #to summaries, the loops will perform the function for the combination of axis: 1-2,1-3 and 2-3 for 3 retained axis. 
+   
+  for (i in 1:(num_axes - 1)) { 
+    for (j in (i + 1):num_axes) { 
       
       PCx <- i
       PCy <- j
       
-      # Calculate explained variance for chosen PCs
       explained_variance <- data.frame(t(round((data$singular.values[PCx:PCy]^2) * 100, digits = 1)))
       colnames(explained_variance) <- c("PCx", "PCy")
       
-      #store the scores along the retained PC axis in a dataframe
       score_Pca_imputed <- data.frame(data$scores[, c(PCx,PCy)], row.names (names))
       colnames(score_Pca_imputed) <- c(paste0("PC", PCx), paste0("PC", PCy), "VCF_ID")
       
-      # add country, population information
       PCa_df_imputed <- merge(score_Pca_imputed, meta_data, "VCF_ID")
       
-      # genetic PCA
       ggplot_representation <- ggplot() +
         geom_point(data = PCa_df_imputed, aes(PCa_df_imputed[,2],PCa_df_imputed[,3],size = names$na_percentage, color = Population)) +
         scale_color_manual(name="Country", values=c("#1f77b4","navyblue", "#2ca02c", "#d62728", "#9467bd",
@@ -287,10 +296,24 @@ Pca_genetic <- function(data, names, num_axes, meta_data) {
             "blue", "#ffbb78", "#98df8a", "#ff9896", "#c5b0d5",
             "#c49c94", "#f7b6d2", "black", "#dbdb8d", "#9edae5",
             "darkgreen", "#c49c94", "#c7c7c7","orangered3","green3" ,
-            "gold2","white", "#ff7f0e","darkorchid3" ))+
+            "gold2","white", "#ff7f0e","darkorchid3" )
+            ,guide = guide_legend(override.aes = list(size = 4))) +
         scale_size(name = "Missing data (%)", breaks = c(0, 5, 10, 14), labels = c("0", "5", "10", "15")) +
         xlab(paste0("PC", PCx, " ", "(", explained_variance$PCx, "%", ")")) + 
-        ylab(paste0("PC", PCy, " ", "(", explained_variance$PCy, "%", ")"))
+        ylab(paste0("PC", PCy, " ", "(", explained_variance$PCy, "%", ")"))+
+        theme_bw(base_size = 11) +
+        theme(legend.position = "right", 
+              legend.title.align = 0.5,  # Center the title above the legend
+              panel.grid = element_blank(), 
+              strip.text = element_text(size = 11),
+              plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+              axis.title.x = element_text(size = 14),
+              axis.title.y = element_text(size = 14),
+              axis.text.x = element_text(size = 12),
+              axis.text.y = element_text(size = 12),
+              legend.title = element_text(size = 14),
+              legend.text = element_text(size = 12),
+              legend.key = element_rect(fill = "transparent", color = NA))
       
       print(ggplot_representation)
       
@@ -298,57 +321,69 @@ Pca_genetic <- function(data, names, num_axes, meta_data) {
 pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/STRUCTURE/PCA/PCA_indiv_level_color_populations.pdf");print(ggplot_representation);dev.off()    
     }
   }
- }
- 
-
+}
 
 #run the function 
 Pca_genetic(data,names,axis,meta_data)
-
 ```
 
 Without the percentage of missing data
 ```{r PCA wo missing data}
-#meta_data
+#Meta_data
 meta_data_vcf_452 <- meta_data_vcf[meta_data_vcf$VCF_ID %in% row.names(gen_data_new),]
 
 #Initial parameters
-data <-Pcadapt_object #dataframe coming from the return of the screeplot_genetic function 
-names <- gen_data_new #initial dataframe
-axis <- 2 #number of retained axis based on the screeplot
-meta_data <- meta_data_vcf_452#meta data
+data <-Pcadapt_object #Dataframe coming from the return of the screeplot_genetic function 
+names <- gen_data_new #Initial dataframe
+axis <- 2 #Number of retained axis based on the screeplot
+meta_data <- meta_data_vcf_452#Meta data
 
 
-#color per country
+#Color per country
 
-#for loop to do it for multiple PC axis like 1-2 but also 1-3, 2-3 etc
+#For loop to do it for multiple PC axis like 1-2 but also 1-3, 2-3 etc
  Pca_genetic <- function(data, names, num_axes, meta_data) {
-   #we can create 2 loops that would perform the Pca_function for each combination of axis retained: 
-  for (i in 1:(num_axes - 1)) { #here, the first loop will select axis between 1 and numb_axis-1 so basically, if we take 3 axis, i will take values of 1 then 2, so PCx will ether be 1 or 2.
-    for (j in (i + 1):num_axes) { #here, the second loop within the first one will take the values of j from i +1 to num axis so if num axis=3, we will have j ranging from 2 to 3 when i=1 and j=3 when i =2
-      #to summaries, the loops will perform the function for the combination of axis: 1-2,1-3 and 2-3 for 3 retained axis. 
+   #We can create 2 loops that would perform the Pca_function for each combination of axis retained: 
+  for (i in 1:(num_axes - 1)) { #Here, the first loop will select axis between 1 and numb_axis-1 so basically, if we take 3 axis, i will take values of 1 then 2, so PCx will ether be 1 or 2.
+    for (j in (i + 1):num_axes) { #Here, the second loop within the first one will take the values of j from i +1 to num axis so if num axis=3, we will have j ranging from 2 to 3 when i=1 and j=3 when i =2
+      #In summary, the loops perform the function for all combinations of axes: 1–2, 1–3, and 2–3 when three axes are retained. 
       
       PCx <- i
       PCy <- j
       
-      # Calculate explained variance for chosen PCs
+      #Calculate explained variance for chosen PCs
       explained_variance <- data.frame(t(round((data$singular.values[PCx:PCy]^2) * 100, digits = 1)))
       colnames(explained_variance) <- c("PCx", "PCy")
       
-      #store the scores along the retained PC axis in a dataframe
+      #Store the scores along the retained PC axis in a dataframe
       score_Pca_imputed <- data.frame(data$scores[, c(PCx,PCy)], row.names (names))
       colnames(score_Pca_imputed) <- c(paste0("PC", PCx), paste0("PC", PCy), "VCF_ID")
       
-      # add country, population information
+      #Add country, population information
       PCa_df_imputed <- merge(score_Pca_imputed, meta_data, "VCF_ID")
       
-      # genetic PCA
+      #Genetic PCA
       ggplot_representation <- ggplot() +
-        geom_point(data = PCa_df_imputed, aes(PCa_df_imputed[,2],PCa_df_imputed[,3], color = Country)) +
+        geom_point(data = PCa_df_imputed, aes(PCa_df_imputed[,2],PCa_df_imputed[,3], color = Country,size=2.5)) +
+        scale_size_identity(guide = "none") +  # Remove size legend
         scale_colour_manual(name = "Country",
-                            values = c("orangered3", "gold2", "darkorchid3", "navyblue", "turquoise2", "green3", "blue", "red", "black", "gray", "orange", "darkgreen")) +
+                            values = c("orangered3", "gold2", "darkorchid3", "navyblue", "turquoise2", "green3", "blue", "red", "black", "gray", "orange", "darkgreen"),
+                            guide = guide_legend(override.aes = list(size = 4))) +  #Match legend +
         xlab(paste0("PC", PCx, " ", "(", explained_variance$PCx, "%", ")")) + 
-        ylab(paste0("PC", PCy, " ", "(", explained_variance$PCy, "%", ")"))
+        ylab(paste0("PC", PCy, " ", "(", explained_variance$PCy, "%", ")"))+
+        theme_bw(base_size = 11) +
+        theme(legend.position = "right", 
+              legend.title.align = 0.5,  #Center the title above the legend
+              panel.grid = element_blank(), 
+              strip.text = element_text(size = 11),
+              plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+              axis.title.x = element_text(size = 14),
+              axis.title.y = element_text(size = 14),
+              axis.text.x = element_text(size = 12),
+              axis.text.y = element_text(size = 12),
+              legend.title = element_text(size = 14),
+              legend.text = element_text(size = 12),
+              legend.key = element_rect(fill = "transparent", color = NA))
       
       print(ggplot_representation)
 #Save
@@ -358,44 +393,57 @@ pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/STRUCTURE/PCA/PC
   }
  }
  
-#run the function 
+#Run the function 
 Pca_genetic(data,names,axis,meta_data)
-
-
 ```
 
    
 ## Population-level
 
+Finally, we calculated PCA at the population level to obtain population scores, which are used to account for population structure in pRDA GEA analyses. Because allelic frequencies were used, the PCADAPT function could not be applied, as it does not support allelic frequency data. Instead, we used the RDA function, which performs PCA equivalently when no covariates are included.
 
-Finally, we wanted to calculate the PCA at the population level because we will use the population scores to account for population structure in GEA analyses. Since we're using the allelic frequencies, we cannot use the PCADAPT function because it cannot handle allelic frequencies. We  used the RDA function, which operates similarly as long as we do not include covariates. 
+As a first step, we checked the number of principal components (PCs) to retain.
 
-First, as before, we need to check the number of principal components (PCs) retained.
 ```{r Screeplot RDA}
-
-#load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/data_allelic_frequencies_29pop_adapcon_gentree_475_8616.Rdata")
 load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/data_allelic_frequencies_non_imp_T_adapcon_gentree_452_8252snps.Rdata")
 gen_data_new <- data_allelic_frequencies_non_imp_T_adapcon_gentree_452_8252snps
 data <- gen_data_new
 k <- 10
 
-#function
-screeplot_genetic <- function(data,k){
+screeplot_genetic <- function(data, k){
   
-#perform the Pca
-RDA_structure_genetic<- rda(data, scale=T)
-screeplot_graph <- screeplot(RDA_structure_genetic, type = "barplot", npcs=10, main="PCA Eigenvalues")
-
-#Save
-pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/STRUCTURE/PCA/screeplot_PCA_Pop_level.pdf");screeplot(RDA_structure_genetic, type = "barplot", npcs=10, main="PCA Eigenvalues");dev.off()
-
+  #Perform PCA
+  RDA_structure_genetic <- rda(data, scale = TRUE)
+  
+  #Compute explained variance
+  explained_variance <- (RDA_structure_genetic$CA$eig / sum(RDA_structure_genetic$CA$eig)) * 100
+  explained_variance_df <- data.frame(PC = seq_along(explained_variance), Variance = explained_variance)
+  
+  #Create scree plot using explained variance
+  screeplot_graph <- ggplot(explained_variance_df[1:k, ], aes(x = factor(PC), y = Variance)) +
+    geom_bar(stat = "identity", fill = "darkgrey") +
+    labs(title = "PCA Scree Plot", x = "Principal Component", y = "Explained Variance (%)") +
+    theme_minimal(base_size = 14) +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+  
+  #Save the plot
+  ggsave("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/STRUCTURE/PCA/screeplot_PCA_Pop_level.pdf",
+         plot = screeplot_graph, width = 6, height = 4)
+  
+  return(screeplot_graph)
 }
-Pcadapt_object <- screeplot_genetic(data,k)
+
+#Run the function and save the object
+Pcadapt_object <- screeplot_genetic(data, 10)
+
+#Display the plot
+print(Pcadapt_object)
 
 RDA_structure_genetic <- rda(data, scale=T)
 ```
 
-Interpretation: we kept the two first axis.
+
+Interpretation: The first two axes were retained for population-level PCA.
 
 PCA at the population level: 
 ```{r PCA using pcadapt, message=FALSE, warning=FALSE}
@@ -404,45 +452,62 @@ meta_data_vcf_452 <- meta_data_vcf[meta_data_vcf$Population %in% row.names(gen_d
 #Initial parameters
 #data <-Pcadapt_object #dataframe coming from the return of the screeplot_genetic function 
 
-axis <- 2 #number of retained axis based on the screeplot
-meta_data <- meta_data_vcf_452#meta data
+axis <- 2 #Number of retained axis based on the screeplot
+meta_data <- meta_data_vcf_452#Meta data
 
-
-
-#for loop to do it for multiple PC axis like 1-2 but also 1-3, 2-3 etc
+#For loop to do it for multiple PC axis like 1-2 but also 1-3, 2-3 etc
  Pca_genetic <- function(data, names, num_axes, meta_data) {
-   #we can create 2 loops that would perform the Pca_function for each combination of axis retained: 
-  for (i in 1:(num_axes - 1)) { #here, the first loop will select axis between 1 and numb_axis-1 so basically, if we take 3 axis, i will take values of 1 then 2, so PCx will ether be 1 or 2.
-    for (j in (i + 1):num_axes) { #here, the second loop within the first one will take the values of j from i +1 to num axis so if num axis=3, we will have j ranging from 2 to 3 when i=1 and j=3 when i =2
-      #to summaries, the loops will perform the function for the combination of axis: 1-2,1-3 and 2-3 for 3 retained axis. 
+   #We can create 2 loops that would perform the Pca_function for each combination of axis retained: 
+  for (i in 1:(num_axes - 1)) { #Here, the first loop will select axis between 1 and numb_axis-1 so basically, if we take 3 axis, i will take values of 1 then 2, so PCx will ether be 1 or 2.
+    for (j in (i + 1):num_axes) { #Here, the second loop within the first one will take the values of j from i +1 to num axis so if num axis=3, we will have j ranging from 2 to 3 when i=1 and j=3 when i =2
+      #In summary, the loops perform the function for all combinations of axes: 1–2, 1–3, and 2–3 when three axes are retained. 
       
       PCx <- i
       PCy <- j
       
-      # Calculate explained variance for chosen PCs
+      #Calculate explained variance for chosen PCs
       explained_variance <- data.frame(eigenvals(RDA_structure_genetic))
       proportion_variance <- data.frame(t(explained_variance[c(PCx,PCy),] / sum(explained_variance) *100)) %>% round(digit=1)
       colnames(proportion_variance) <- c("PCx", "PCy")
       
-      #store the scores along the retained PC axis in a dataframe
+      #Store the scores along the retained PC axis in a dataframe
       store_score_rda <- scores(RDA_structure_genetic, axes = c(PCx, PCy),display="sites" ) %>% data.frame(row.names(data))
       colnames(store_score_rda) <- c(paste0("PC", PCx), paste0("PC", PCy), "Population")
       
-      # add country, population information
-      PCa_score_T_adapcon_gentree <- merge(store_score_rda, meta_data, "Population") %>% group_by(Population) %>% slice_head(n = 1) %>% ungroup() %>% as.data.frame()  #keep only the first row of each groups
-      
-      
-      
-      # genetic PCA
+      #Add country, population information
+      PCa_score_T_adapcon_gentree <- merge(store_score_rda, meta_data, "Population") %>% group_by(Population) %>% slice_head(n = 1) %>% ungroup() %>% as.data.frame()  #Keep only the first row of each groups
+
+      #Genetic PCA
       ggplot_representation <- ggplot() +
-        geom_point(data = PCa_score_T_adapcon_gentree, aes(PCa_score_T_adapcon_gentree[,2],PCa_score_T_adapcon_gentree[,3],size=8, color = PCa_score_T_adapcon_gentree$Country)) +
+        geom_point(data = PCa_score_T_adapcon_gentree,   
+                   aes(PCa_score_T_adapcon_gentree[,2], 
+                       PCa_score_T_adapcon_gentree[,3], 
+                       size = 4, 
+                       color = PCa_score_T_adapcon_gentree$Country)) +
+        scale_size_identity(guide = "none") +  #Remove size legend
         scale_colour_manual(name = "Country",
-                            values = c("orangered3", "gold2", "darkorchid3", "navyblue", "turquoise2", "green3", "blue", "red", "black", "gray", "orange", "darkgreen")) +
+                            values = c("orangered3", "gold2", "darkorchid3", "navyblue", 
+                                       "turquoise2", "green3", "blue", "red", "black", 
+                                       "gray", "orange", "darkgreen"),
+                            guide = guide_legend(override.aes = list(size = 4))) +  #Match legend point size to plot
         xlab(paste0("PC", PCx, " ", "(", proportion_variance$PCx, "%", ")")) + 
-        ylab(paste0("PC", PCy, " ", "(", proportion_variance$PCy, "%", ")"))
-      
-      print(ggplot_representation)
-      
+        ylab(paste0("PC", PCy, " ", "(", proportion_variance$PCy, "%", ")")) +
+        theme_bw(base_size = 11) +
+        theme(legend.position = "right", 
+              legend.title.align = 0.5,  #Center the title above the legend
+              panel.grid = element_blank(), 
+              strip.text = element_text(size = 11),
+              plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+              axis.title.x = element_text(size = 14),
+              axis.title.y = element_text(size = 14),
+              axis.text.x = element_text(size = 12),
+              axis.text.y = element_text(size = 12),
+              legend.title = element_text(size = 14),
+              legend.text = element_text(size = 12),
+              legend.key = element_rect(fill = "transparent", color = NA))
+
+print(ggplot_representation)
+
  #Save
 pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/STRUCTURE/PCA/PCA_Pop_level.pdf");print(ggplot_representation);dev.off()
 
@@ -451,19 +516,14 @@ pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/STRUCTURE/PCA/PC
     }
   }
  }
- 
-#run the function 
+#Run the function 
 PCa_score_T_adapcon_gentree<-Pca_genetic(data,names,axis,meta_data)
-
-
-
 ```
 
-Finally, we saved the table of population scores along the PCs axes to used them in variance partitioning and GEA analyses
+Finally, the table of population scores along the PCA axes was saved for use in variance partitioning and GEA pRDA analyses.
+
 ```{r save score pop, message=FALSE, warning=FALSE, include=FALSE}
-
-#before saving, we need to scale the PC axis
-
+#Before saving, we need to scale the PC axis
 PCa_score_T_adapcon_gentree_scale_new <- PCa_score_T_adapcon_gentree %>% 
     mutate(across(where(is.numeric), scale))
 
@@ -472,14 +532,14 @@ write_xlsx(PCa_score_T_adapcon_gentree_scale_new,"C:/Users/tfrancisco/Documents/
 ```
 
 
-Overall interpretation: The patterns observed are nearly identical to those found with PCA at the individual level. This is expected, but it allows us to verify if there were any mistakes during the calculation of allelic frequencies or in other processes.
+Overall interpretation: The patterns observed at the population level are nearly identical to those found in the individual-level PCA. This consistency is expected when genetic structure is found across populaitons and provides a check for potential errors during the calculation of allelic frequencies or other processing steps.
 
 
 # STRUCTURE software
       
-The next step is to study the population structure using the STRUCTURE software.STRUCTURE is a Bayesian clustering approach that applies MCMC iterations. The MCMC begins by assessing randomly individuals to k groups (depending on the chosen k). Then, the allelic frequencies are calculated for each groups and the q-values at the individual scale and individuals are re-assigned depending on their Q-values. Each iteration of the MCMC estimates the allelic frequencies of the population and the Q-values of individuals, re-arranging groups of individuals to maximize the likelihood based on the Q-values. Initially, individuals are assigned randomly to the groups, so we apply a burning period to eliminate stochastic group assignments that occur before the MCMC begins to stabilize.
-After the burning iteration period, each subsequent iteration is used to calculate the final Q-values for each individual, as these values will represent the mean Q-values for each iteration following the burning phase. We can also perform multiple runs for each K to assess whether the MCMC has converged to similar results across runs. 
+The next step involved analysing population structure using STRUCTURE, a Bayesian clustering approach that employs Markov Chain Monte Carlo (MCMC) iterations. Initially, individuals are randomly assigned to K groups, where K is the number of clusters chosen. Allele frequencies are then estimated for each group, and individual membership coefficients (Q-values) are calculated. Individuals are re-assigned to groups based on their Q-values, and each MCMC iteration updates allele frequencies and Q-values to maximize the likelihood of the data.  
 
+Because the initial assignments are random, a burn-in period is applied to allow the MCMC to stabilize before calculating final Q-values. Subsequent iterations after burn-in are used to compute the mean Q-values for each individual. Multiple runs for each K can be performed to ensure convergence and consistency of results across runs.  
 
 We performed the analysis in Genotoul cluster using:  
 - 8252 SNPs  
@@ -489,18 +549,17 @@ We performed the analysis in Genotoul cluster using:
 - 500 000 iterations (after the burning)  
 - 10 MCMC per K  
 
-Afterward, we used STRUCTURE Harvester in Linux to estimate the number of K values to retain (using the Evanno method and ln(K)) and to output the results in CLUMPP format. When running STRUCTURE, the names of the groups (1, 2, etc.) may not be consistent across runs for the same K. To reorganize the groups for estimating mean Q-values per individual across runs for the same K values, we used CLUMPP in Linux to reassign individuals to a consistent group name across runs.
-Finally, we used the CLUMPAK web interface to visualize the delta k (Evanno method) and the ln(K) values (since STRUCTURE Harvester lacks a graphical option). We can also plot the traditional STRUCTURE graph showing the Q-values per individual. In this script, the goal is to plot the mean Q-value per population on a map to visualize the population structure.
+Subsequently, we used STRUCTURE Harvester on Linux to estimate the optimal number of clusters (K) using the Evanno method and log-likelihood [ln(K)] values, and to output results in CLUMPP format. Because group labels (1, 2, etc.) may vary across runs for the same K, we used CLUMPP to reassign individuals to consistent group labels, enabling calculation of mean Q-values per individual across runs.
 
+Finally, we visualised the results using the CLUMPAK web interface, which allowed plotting of delta K (Evanno method) and ln(K) values, as STRUCTURE Harvester does not provide graphical outputs. Traditional STRUCTURE plots showing individual Q-values were also generated. In this script, our focus was to plot the mean Q-value per population on a map to visualize population structure.
 
-First, we loaded the individual order from the STRUCTURE analysis to assign their Q scores.
+The first step involved loading the order of individuals from the STRUCTURE analysis to correctly assign their Q-values.
 ```{r position indiviv file STRUCTURE }
 name <- read.table("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/STRUCTURE/clumpp_output/data_split_try.txt")
 ```
 
-Then, we calculated the mean Q-value per population and for each K, plotted it in a map. 
+Next, we calculated the mean Q-value per population for each K and visualised the results on a map.
 ```{r loop for output of structure,eval=F, echo=T}
-
 for(i in 2:10){
   input <- paste0("K",i)
   data <- read.table(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/STRUCTURE/clumpp_output/",input,"_mean.txt"))
@@ -508,13 +567,11 @@ for(i in 2:10){
   k_full <- data.frame(name[,c(1)],data[,-c(1:5)])
   colnames(k_full) <- c("VCF_ID", paste0("Group",6:ncol(data)-5))
   
-  #keep consistency with the colors of the main groups
-  #to do this, we will order the columns (=the groups) the same way for each K using the values of the first row. 
-  #Teh values of group of the first row, will order the position of the groups and then keep colors consistency along the main gene pools
+  #To maintain consistency in the colors of the main groups across different K values, columns representing the groups were ordered consistently for each K based on the values in the first row. This ensures that the same group occupies the same position and color across visualizations, preserving consistency for the main gene pools.
   
   sorted_columns <- names(k_full[,-1])[order(-apply(k_full[,-1], 2, function(x) x[1]))]
 
-# Reorder columns based on the maximum value to keep consistency with the color of the groups
+#Reorder columns based on the maximum value to keep consistency with the color of the groups
 k_full_bis <- k_full[, sorted_columns, drop = FALSE]
 
 #add ID again
@@ -537,36 +594,39 @@ k_full_final <- data.frame(k_full[,1],k_full_bis);colnames(k_full_final) <- c("V
   groups <- paste0("Group",6:ncol(data)-5)
   admin <- ne_countries(scale = "medium", returnclass = "sf")
 my.colors<- c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd","#7f7f7f","#bcbd22", "#c49c94", "#f7b6d2", "darkgreen")
-# Plot the map with scatterpie
+#Plot the map with scatterpie
 map_pop <- ggplot() + 
-  geom_sf(data = admin, fill = gray(0.92), size = 0) +#background of the map
+  geom_sf(data = admin, fill = gray(0.92), size = 0) +#Background of the map
   geom_scatterpie(
     data = mean_admixture_pop,
     aes(x = Longitude, y = Latitude),
-    cols = groups, # Adjust columns accordingly to the groups
-    size = 0,#size of the bold (=gras)
-    alpha = 1, #transparence
+    cols = groups, #Adjust columns accordingly to the groups
+    size = 0,#Size of the bold (=gras)
+    alpha = 1, #Transparence
   ) +
   geom_text(
-    data = mean_admixture_pop,
-    aes(x = Longitude, y = Latitude, label = Population_bis,fontface = "bold"),
-    size = 3, # size of the label text
-    vjust = 2 # vertical justification for the label
+   data = mean_admixture_pop,
+    aes(x = Longitude, y = Latitude, label = meta_data_pop_order$pop_abbrev,fontface = "bold"),
+    size = 3, #Size of the label text
+    vjust = 2 #Vertical justification for the label
   ) +
   scale_fill_manual(values=my.colors)+
-  coord_sf(xlim = c(-10, 30), ylim = c(36, 65), expand = FALSE) +#extension of the map
+  coord_sf(xlim = c(-10, 30), ylim = c(35, 62), expand = FALSE) +#Extension of the map
+  annotation_scale(location = "br", width_hint = 0.3) + #Scale bar at bottom left
+  annotation_north_arrow(location = "tl", which_north = "true", 
+                         pad_x = unit(-0.2, "cm"), pad_y = unit(0.08, "cm"),
+                         style = north_arrow_fancy_orienteering) + #Compass rose
   theme_minimal() +
   labs(title = paste0("Genetic Structure for"," ", input," ", "groups"),fill="STRUCTURE groups")
 
 print(map_pop)
- #save
+ #Save
 pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/Structure/Map_",input,"_STRUCTURE.pdf"));print(map_pop);dev.off()
-
 }
 ```
 
 ```{r example k3, echo=FALSE}
-#example k=3 for the HTML file
+#Example k=3 for the HTML file
 for(i in 3){
   input <- paste0("K",i)
   
@@ -575,16 +635,10 @@ for(i in 3){
   k_full <- data.frame(name[,c(1)],data[,-c(1:5)])
   colnames(k_full) <- c("VCF_ID", paste0("Group",6:ncol(data)-5))
   
-  #keep consistency with the colors of the main groups
-  #to do this, we will order the columns (=the groups) the same way for each K using the values of the first row. 
-  #Teh values of group of the first row, will order the position of the groups and then keep colors consistency along the main gene pools
-  
   sorted_columns <- names(k_full[,-1])[order(-apply(k_full[,-1], 2, function(x) x[1]))]
 
-# Reorder columns based on the maximum value to keep consistency with the color of the groups
 k_full_bis <- k_full[, sorted_columns, drop = FALSE]
 
-#add ID again
 k_full_final <- data.frame(k_full[,1],k_full_bis);colnames(k_full_final) <- c("VCF_ID", paste0("Group",6:ncol(data)-5))
   k_with_pop <- merge(k_full_final,meta_data_vcf,"VCF_ID") %>% merge(meta_data_pop,"Population")
   k_final <- k_with_pop %>% dplyr::select(-c("Country.y","N","Elevation.DEM_90m."))
@@ -605,20 +659,20 @@ my.colors<- c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd","#7f7f7f","#
 
 # Plot the map with scatterpie
 map_pop <- ggplot() + 
-  geom_sf(data = admin, fill = gray(0.92), size = 0) +#background of the map
+  geom_sf(data = admin, fill = gray(0.92), size = 0) +
   geom_scatterpie(
     data = mean_admixture_pop,
     aes(x = Longitude, y = Latitude),
-    cols = groups, # Adjust columns accordingly to the groups
-    size = 0,#size of the bold (=gras)
-    alpha = 1, #transparence
+    cols = groups, 
+    size = 0,
+    alpha = 1, 
   ) +
-  geom_text(
-    data = mean_admixture_pop,
-    aes(x = Longitude, y = Latitude, label = Population_bis,fontface = "bold"),
-    size = 3, # size of the label text
-    vjust = 2 # vertical justification for the label
-  ) +
+  #geom_text(
+   # data = mean_admixture_pop,
+    #aes(x = Longitude, y = Latitude, label = Population_bis,fontface = "bold"),
+    #size = 3, # size of the label text
+    #vjust = 2 # vertical justification for the label
+  #) +
   scale_fill_manual(values=my.colors)+
   coord_sf(xlim = c(-10, 30), ylim = c(36, 65), expand = FALSE) +#extension of the map
   theme_minimal() +
@@ -628,27 +682,253 @@ print(map_pop)
 }
 ```
 
+Interpretation: Based on the initial CLUMPAK results and biological relevance, we originally selected K = 3, as it appeared to capture the largest pattern of population structure. This K value was intended for imputing missing genomic data within the three groups. However, after including K = 1 in the analysis, it became evident that the previous procedure had not tested K = 2. With this correction, the best-supported number of clusters was found to be K = 2, rather than 3.
+```{r example k2, echo=FALSE}
+#example k=2 for the HTML file
+for(i in 2){
+  input <- paste0("K",i)
+  
+  data <- read.table(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/STRUCTURE/clumpp_output/",input,"_mean.txt"))
+  
+  k_full <- data.frame(name[,c(1)],data[,-c(1:5)])
+  colnames(k_full) <- c("VCF_ID", paste0("Group",6:ncol(data)-5))
+  
+  sorted_columns <- names(k_full[,-1])[order(-apply(k_full[,-1], 2, function(x) x[1]))]
 
-Interpretation: Based on the Best K from CLUMPAK and the biological relevance, we selected K=3 because it explains the largest pattern of population structure. Then, we will use k=3 for imputing genomic missing data within the three groups
+k_full_bis <- k_full[, sorted_columns, drop = FALSE]
 
-Finally, we saved the scores for K=3 to used them as population structure proxy in variance partitioning models. 
+k_full_final <- data.frame(k_full[,1],k_full_bis);colnames(k_full_final) <- c("VCF_ID", paste0("Group",6:ncol(data)-5))
+  k_with_pop <- merge(k_full_final,meta_data_vcf,"VCF_ID") %>% merge(meta_data_pop,"Population")
+  k_final <- k_with_pop %>% dplyr::select(-c("Country.y","N","Elevation.DEM_90m."))
+  
+  mean_admixture_pop <- k_final %>% 
+   group_by(Population) %>% 
+  mutate(across(where(is.numeric), mean)) %>% 
+  slice_head(n = 1) %>% 
+  ungroup()
+  
+  mean_admixture_pop$Longitude=as.numeric(mean_admixture_pop$Longitude);mean_admixture_pop$Latitude=as.numeric(mean_admixture_pop$Latitude)
+  
+  mean_admixture_pop$Population_bis <- c("Anc","Blind","Bohin","Brank","Buja_A","Buja_G","Cardo","Castle","Fonte","Foresta","Gorenj","Harm","Horn","Jura","Cholo","Olym","Vour","Pater","Rasc","Rouds","Baume","Saro","Serra","Sueve","Unska","Valdi","Vise","Wal","Yew")
+
+  groups <- paste0("Group",6:ncol(data)-5)
+  admin <- ne_countries(scale = "medium", returnclass = "sf")
+my.colors<- c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd","#7f7f7f","#bcbd22", "#c49c94", "#f7b6d2", "darkgreen")
+
+# Plot the map with scatterpie
+map_pop <- ggplot() + 
+  geom_sf(data = admin, fill = gray(0.92), size = 0) +
+  geom_scatterpie(
+    data = mean_admixture_pop,
+    aes(x = Longitude, y = Latitude),
+    cols = groups, 
+    size = 0,
+    alpha = 1,
+  ) +
+  geom_text(
+    data = mean_admixture_pop,
+    aes(x = Longitude, y = Latitude, label = Population_bis,fontface = "bold"),
+    size = 3, 
+    vjust = 2
+  ) +
+  scale_fill_manual(values=my.colors)+
+  coord_sf(xlim = c(-10, 30), ylim = c(36, 65), expand = FALSE) +
+  theme_minimal() +
+  labs(title = paste0("Genetic Structure for"," ", input," ", "groups"),fill="STRUCTURE groups")
+
+print(map_pop)
+}
+```
+
+
+```{r nice map }
+library(ggplot2)
+library(sf)
+library(scatterpie)
+library(dplyr)
+library(ggrepel)
+library(rnaturalearth)
+library(rnaturalearthdata)
+
+#Load map
+admin <- ne_countries(scale = "medium", returnclass = "sf")
+
+#Target projection (ETRS89 / LAEA Europe - EPSG:3035)
+lambert_crs <- 3035
+
+#Project background map
+admin_proj <- st_transform(admin, crs = lambert_crs)
+
+#Prepare STRUCTURE data
+K <- 2
+input <- paste0("K", K)
+data <- read.table(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/STRUCTURE/clumpp_output/", input, "_mean.txt"))
+
+k_full <- data.frame(name[, 1], data[, -c(1:5)])
+colnames(k_full) <- c("VCF_ID", paste0("Group", 1:(ncol(k_full) - 1)))
+sorted_columns <- names(k_full[, -1])[order(-apply(k_full[, -1], 2, function(x) x[1]))]
+k_full_bis <- k_full[, sorted_columns, drop = FALSE]
+k_full_final <- data.frame(k_full[, 1], k_full_bis)
+colnames(k_full_final) <- c("VCF_ID", paste0("Group", 1:(ncol(k_full_final) - 1)))
+
+k_with_pop <- merge(k_full_final, meta_data_vcf, by = "VCF_ID") %>%
+  merge(meta_data_pop, by = "Population") %>%
+  select(-c("Country.y", "N", "Elevation.DEM_90m."))
+
+mean_admixture_pop <- k_with_pop %>%
+  group_by(Population) %>%
+  mutate(across(where(is.numeric), mean)) %>%
+  slice_head(n = 1) %>%
+  ungroup()
+
+mean_admixture_pop$Longitude <- as.numeric(mean_admixture_pop$Longitude)
+mean_admixture_pop$Latitude <- as.numeric(mean_admixture_pop$Latitude)
+
+#label cleanup
+mean_admixture_pop$Population_bis <- c("Anc", "Blind", "Bohin", "Brank", "Buja_A", "Buja_G",
+                                       "Cardo", "Castle", "Fonte", "Foresta", "Gorenj", "Harm",
+                                       "Horn", "Jura", "Cholo", "Olym", "Vour", "Pater", "Rasc",
+                                       "Rouds", "Baume", "Saro", "Serra", "Sueve", "Unska", "Valdi",
+                                       "Vise", "Wal", "Yew")[1:nrow(mean_admixture_pop)]
+
+#Convert to sf and project
+pies_sf <- st_as_sf(mean_admixture_pop, coords = c("Longitude", "Latitude"), crs = 4326)
+pies_proj <- st_transform(pies_sf, crs = lambert_crs)
+coords <- st_coordinates(pies_proj)
+
+mean_admixture_pop$x <- coords[, 1]
+mean_admixture_pop$y <- coords[, 2]
+
+#Group names
+groups <- grep("^Group", colnames(mean_admixture_pop), value = TRUE)
+
+#Colors
+my.colors <- c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+               "#7f7f7f", "#bcbd22", "#c49c94", "#f7b6d2", "darkgreen")
+
+
+plot <- ggplot() +
+  geom_sf(data = admin_proj, fill = gray(0.90), color = "white", size = 0.2) +
+  geom_sf(data = shapefile, fill = "#d9f2d9", color = "gray60", size = 0.2) +  #Adding shapefile
+   geom_scatterpie(
+    data = mean_admixture_pop,
+    aes(x = x, y = y),
+    cols = groups,
+    pie_scale = 1.2  #Increase this value for larger pies
+  ) +
+  #geom_text_repel(
+   # data = mean_admixture_pop,
+   # aes(x = x, y = y, label = Population_bis),
+   # size = 3
+  #) +
+  scale_fill_manual(values = my.colors) +
+ coord_sf(crs = lambert_crs,
+         xlim = c(2379349, 7002838),
+         ylim = c(1029721, 4519987),
+         expand = FALSE)+
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "azure", color = NA),
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  ) +
+  labs(
+    title = paste0("Genetic Structure for ", input, " groups"),
+    fill = "STRUCTURE groups"
+  )
+print(plot)
+pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/Structure/Map_chapter2_",input,"_STRUCTURE.pdf"));print(plot);dev.off()
+```
+
+
+
+We also generated STRUCTURE barplots to visualize the contribution of each individual to the inferred clusters within populations.
+
+```{r structure barplot}
+for(i in 2:3){
+  input <- paste0("K", i)
+
+  #Load STRUCTURE results
+  data <- read.table(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/STRUCTURE/clumpp_output/", input, "_mean.txt"))
+  
+  k_full <- data.frame(name[,c(1)], data[,-c(1:5)])
+  colnames(k_full) <- c("VCF_ID", paste0("Group", 1:(ncol(k_full)-1)))  #Adjust for group numbering
+  
+  #Reorder groups based on first row's values for color consistency
+  sorted_columns <- names(k_full[,-1])[order(-apply(k_full[,-1], 2, function(x) x[1]))]
+  k_full_bis <- k_full[, sorted_columns, drop = FALSE]
+
+  #Add ID again
+  k_full_final <- data.frame(k_full[,1], k_full_bis)
+  colnames(k_full_final) <- c("VCF_ID", paste0("Group", 1:(ncol(data)-5)))
+  
+  #Merge with metadata, using population abbreviations from meta_data_pop_order
+  k_with_pop <- merge(k_full_final, meta_data_vcf, by = "VCF_ID") %>% 
+    merge(meta_data_pop, by = "Population") %>%
+    merge(meta_data_pop_order[,c(2,7)], by = "Population")
+
+  k_final <- k_with_pop %>% 
+    dplyr::select(-c("Country.y", "N", "Elevation.DEM_90m."))
+
+  #Identify the major group for each individual (the group with highest ancestry)
+  k_final$Assigned_Group <- apply(k_final %>% select(starts_with("Group")), 1, function(x) {
+    paste0("Group", which.max(x))  #Assign the group with the highest proportion
+  })
+
+  #Order individuals by Assigned Group, then by Population
+  k_final <- k_final %>%
+    arrange(Assigned_Group, Population)
+
+  #Create a population label that appears only once per group
+  k_final <- k_final %>%
+    group_by(Assigned_Group, Population) %>%
+    mutate(Population_Label = ifelse(row_number() == 1, as.character(pop_abbrev), "")) %>%  #Use abbreviation
+    ungroup()
+
+  #Convert to long format for ggplot
+  k_long <- k_final %>%
+    pivot_longer(cols = starts_with("Group"), names_to = "Group", values_to = "Admixture") %>%
+    mutate(Population = factor(Population, levels = unique(k_final$Population)))  #Ensure correct order
+  
+  my.colors <- c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#7f7f7f", "#bcbd22", "#c49c94", "#f7b6d2", "darkgreen")
+
+  #Create the STRUCTURE bar plot
+  structure_plot <- ggplot(k_long, aes(x = factor(VCF_ID, levels = k_final$VCF_ID), y = Admixture, fill = Group)) +
+    geom_bar(stat = "identity", width = 1) +
+    scale_fill_manual(values = my.colors) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8),  #Angled text for bias effect
+          axis.ticks.x = element_blank(),
+          panel.grid.major = element_blank(), 
+          panel.grid.minor = element_blank()) +
+    scale_x_discrete(labels = k_final$Population_Label) +  #Show population codes instead of country
+    labs(title = paste0("STRUCTURE Barplot for ", input, " Groups"),
+         x = "Populations", y = "Admixture Proportion", fill = "STRUCTURE Groups")
+
+  print(structure_plot)
+#Save
+pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/STRUCTURE/figures/STRUCTURE_barplotK",i,".pdf"));print(structure_plot);dev.off()
+}
+```
+
+
+Finally, we saved the STRUCTURE scores for K = 3.
 ```{r save k3 scores}
-#we need to run the function only for k=3 and save the dataframe
+#Run the function only for K=3 and save the resulting dataframe
 data <- read.table("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/STRUCTURE/clumpp_output/K3_mean.txt")
   
   k_full <- data.frame(name[,c(1)],data[,-c(1:5)])
   colnames(k_full) <- c("VCF_ID", paste0("Group",6:ncol(data)-5))
   
-  #keep consistency with the colors of the main groups
-  #to do this, we will order the columns (=the groups) the same way for each K using the values of the first row. 
-  #The values of group of the first row, will order the position of the groups and then keep colors consistency along the main gene pools.
+#Ensure consistent colors for main groups across K values
+#Order columns (groups) the same way for each K using the first row values
+#This keeps group positions consistent and maintains color consistency across main gene pools
   
   sorted_columns <- names(k_full[,-1])[order(-apply(k_full[,-1], 2, function(x) x[1]))]
 
-# Reorder columns based on the maximum value to keep consistency with the color of the groups
+#Reorder columns based on the maximum value to keep consistency with the color of the groups
 k_full_bis <- k_full[, sorted_columns, drop = FALSE]
 
-#add ID again
+#Add ID again
 k_full_final <- data.frame(k_full[,1],k_full_bis);colnames(k_full_final) <- c("VCF_ID", paste0("Group",6:ncol(data)-5))
   k_with_pop <- merge(k_full_final,meta_data_vcf,"VCF_ID") %>% merge(meta_data_pop,"Population")
   k_final <- k_with_pop %>% dplyr::select(-c("Country.y","N","Elevation.DEM_90m."))
@@ -663,36 +943,203 @@ k_full_final <- data.frame(k_full[,1],k_full_bis);colnames(k_full_final) <- c("V
   Cluster_score_STRUCTURE_T_Adapcon_gentree <- mean_admixture_pop[,-c(2,6:8)]
   
   save(Cluster_score_STRUCTURE_T_Adapcon_gentree,file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/GEA/Structure_proxy/Cluster_score_STRUCTURE_T_Adapcon_gentree.Rdata")
+  
+write_xlsx(k_final,"C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/GEA/Structure_proxy/k_final.xlsx")
+```
+
+```{r save k2 scores}
+#Run the function only for K=3 and save the resulting dataframe
+data <- read.table("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/STRUCTURE/clumpp_output/K2_mean.txt")
+  
+  k_full <- data.frame(name[,c(1)],data[,-c(1:5)])
+  colnames(k_full) <- c("VCF_ID", paste0("Group",6:ncol(data)-5))
+  
+#Ensure consistent colors for main groups across K values
+#Order columns (groups) the same way for each K using the first row values
+#This keeps group positions consistent and maintains color consistency across main gene pools
+  
+  sorted_columns <- names(k_full[,-1])[order(-apply(k_full[,-1], 2, function(x) x[1]))]
+
+#Reorder columns based on the maximum value to keep consistency with the color of the groups
+k_full_bis <- k_full[, sorted_columns, drop = FALSE]
+
+#Add ID again
+k_full_final <- data.frame(k_full[,1],k_full_bis);colnames(k_full_final) <- c("VCF_ID", paste0("Group",6:ncol(data)-5))
+  k_with_pop <- merge(k_full_final,meta_data_vcf,"VCF_ID") %>% merge(meta_data_pop,"Population")
+  k_final <- k_with_pop %>% dplyr::select(-c("Country.y","N","Elevation.DEM_90m."))
+  
+  mean_admixture_pop <- k_final %>% 
+   group_by(Population) %>% 
+  mutate(across(where(is.numeric), mean)) %>% 
+  slice_head(n = 1) %>% 
+  ungroup() %>% 
+  mutate(across(where(is.numeric),scale))
+  
+  Cluster_score_STRUCTURE_T_Adapcon_gentreeK2 <- mean_admixture_pop[,-c(2,5:7)]
+  
+  save(Cluster_score_STRUCTURE_T_Adapcon_gentreeK2,file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/GEA/Structure_proxy/Cluster_score_STRUCTURE_T_Adapcon_gentreeK2.Rdata")
+  
+write_xlsx(k_final,"C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/GEA/Structure_proxy/k2_final.xlsx")
+```
+
+
+# Fst
+
+We mapped the FST values across populations using the European environmental classification to visualise spatial patterns of genetic differentiation.
+FST was calculated using the population-specific divergence index as implemented in BayeScan. 
+
+```{r load Fst data}
+meta_data_pop <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Populations/taxus_sample_29pop.csv",h=T,sep=";",dec=",")
+
+#Alphabetic order
+meta_data_pop_order <- meta_data_pop[order(meta_data_pop$Population),]
+meta_data_pop_order$Latitude <- as.numeric(meta_data_pop_order$Latitude);meta_data_pop_order$Longitude <- as.numeric(meta_data_pop_order$Longitude)
+
+load("C:/Users/tfrancisco/Documents/Thesis/Results/all_species/FST_index/Bayescan_FST_pop_order_Taxus_bis.Rdata")
+
+meta_data_pop_order$pop_abbrev <- c("ANC","BLI","BOM","BRA","BUJA","BUJG","CAR","CED","PDT","UMB","GOR","HAR","HHR","JUR","CHO","OLY","VOU","PAT","RAS","RWM","BAU","SAV","SDF","SUE","UNS","VAL","VIS","WAL","YEW")
+
+data_Fst <- merge(meta_data_pop_order,Bayescan_FST_pop_order_Taxus_bis,"Population")
+```
+
+We overlaid the map with the environmental stratification from Metzger (2018), downloaded from the EEA Geospatial Data Catalogue.
+
+```{r map environmental stratification and Fst}
+library(ggplot2)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+
+#Load shapefile
+ens <- st_read("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/enviro_map/EnSv8/ens_v8.shp")
+
+zone_colors <- c(
+  "Alpine North"            = "#A020F0",  # purple
+  "Boreal"                  = "#006400",
+  "Nemoral"                 = "#9ACD32",
+  "Atlantic North"          = "#00CED1",
+  "Alpine South"            = "#AFEEEE",
+  "Continental"             = "#32CD32",
+  "Atlantic Central"        = "#87CEFA",
+  "Pannonian"               = "#556B2F",
+  "Lusitanian"              = "#4682B4",
+  "Anatolian"               = "#A52A2A",
+  "Mediterranean Mountains"= "#D2B48C",
+  "Mediterranean North"    = "#FFA500",
+  "Mediterranean South"    = "#8B4513"
+)
+
+code_to_name <- c("ALN" = "Alpine North", 
+                  "BOR" = "Boreal",
+                  "NEM" = "Nemoral",
+                  "ATN" = "Atlantic North",
+                  "ALS" = "Alpine South",
+                  "CON" = "Continental",
+                  "ATC" = "Atlantic Central",
+                  "PAN" = "Pannonian",
+                  "LUS" = "Lusitanian",
+                  "ANA" = "Anatolian",
+                  "MDM" = "Mediterranean Mountains",
+                  "MDN" = "Mediterranean North",
+                  "MDS" = "Mediterranean South")
+
+#Reduce climates
+code_to_name <- c("ALN" = "Alpine", 
+                  "BOR" = "Boreo-Nemoral",
+                  "NEM" = "Boreo-Nemoral",
+                  "ATN" = "Atlantic",
+                  "ALS" = "Alpine",
+                  "CON" = "Continental",
+                  "ATC" = "Atlantic",
+                  "PAN" = "Missing",
+                  "LUS" = "Atlantic",
+                  "ANA" = "Missing",
+                  "MDM" = "Mediterranean Mountains",
+                  "MDN" = "Mediterranean",
+                  "MDS" = "Mediterranean")
+
+zone_colors <- c(
+  "Alpine"            = "#A020F0",  # purple
+  "Boreo-Nemoral"                  = "#AFEEEE",
+  "Atlantic"          = "#00CED1",
+  "Continental"             = "#32CD32",
+  "Mediterranean Mountains"= "#8B4513",
+  "Mediterranean"    = "#FFD700",
+    "Missing" = "white"
+
+)
+
+
+ens$EnS_name <- sapply(substr(ens$EnS_name, 1, 3), function(code) code_to_name[code])
+
+ens$EnS_name <- factor(ens$EnS_name, levels = c(
+  "Alpine", "Boreo-Nemoral", "Atlantic", "Continental", 
+  "Mediterranean Mountains", "Mediterranean","Missing"
+))
+
+#Load country borders for context map
+admin <- ne_countries(scale = "medium", returnclass = "sf")
+
+plot <- ggplot() + 
+  geom_sf(data = admin, fill = gray(0.92), size = 0.1) +  #Background countries
+  geom_sf(data = ens, aes(fill = EnS_name), color = "black", size = 0.1) +  # Environmental zones
+  scale_fill_manual(
+    values = zone_colors,
+    name = "Environmental Zones"
+  ) +
+  coord_sf(xlim = c(-10, 30), ylim = c(35, 62), expand = FALSE) +  # Crop to Europe
+  xlab("Longitude") + ylab("Latitude") +
+  ggtitle("Environmental Zones of Europe") +
+  geom_point(data = data_Fst, 
+           aes(x = Longitude, y = Latitude, size = Fst), 
+           shape = 21, fill = "red", color = "black", alpha = 1)+
+  theme_bw(base_size = 11) +
+  theme(
+    legend.position = "right",
+    panel.grid = element_blank(),
+    strip.text = element_text(size = 11),
+    plot.title = element_text(hjust = 0.5, color = "Black", face = "italic")
+  )
+
+print(plot)
+
+plot <- ggplot() + 
+  geom_sf(data = admin, fill = gray(0.92), size = 0.1) +
+  geom_sf(data = ens, aes(fill = EnS_name), color = NA, size = 0.1, alpha = 0.30) +
+  scale_fill_manual(values = zone_colors, name = "Environmental Zones") +
+  geom_point(data = data_Fst, 
+             aes(x = Longitude, y = Latitude, size = Fst), 
+             shape = 21, fill = "red", color = "black", alpha = 1) +
+  scale_size_continuous(
+    name = "Fst",
+    breaks = range(data_Fst$Fst),
+    labels = c("0.01", "0.27")
+  ) +
+  geom_text(data = data_Fst, aes(x = Longitude, y = Latitude+0.7, label = pop_abbrev,fontface = "bold"), size = 3.0, color = "black",fontface = "bold") +
+  coord_sf(xlim = c(-10, 30), ylim = c(35, 62), expand = FALSE) +
+  xlab("Longitude") + ylab("Latitude") +
+  ggtitle("Environmental Zones of Europe") +
+  annotation_scale(location = "br", width_hint = 0.3) + # Scale bar at bottom left
+  annotation_north_arrow(location = "tl", which_north = "true", 
+                         pad_x = unit(-0.2, "cm"), pad_y = unit(0.08, "cm"),
+                         style = north_arrow_fancy_orienteering) + # Compass rose
+  theme_bw(base_size = 11) +
+  theme(
+    legend.position = "right",
+    panel.grid = element_blank(),
+    strip.text = element_text(size = 11),
+    plot.title = element_text(hjust = 0.5, color = "Black", face = "italic")
+  )
+
+print(plot)
+
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/map_sampled/Envi_zones_and_Fst_new.pdf");print(plot);dev.off()
 ```
 
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# Draft
 
 **not using admixture from LEA package anymore but script below will do it if needed** 
 ```{r SNMF admixture, eval=FALSE, include=FALSE}

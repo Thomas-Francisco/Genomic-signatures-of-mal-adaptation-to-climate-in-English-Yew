@@ -13,7 +13,7 @@ output:
 
 ```{r library, message=FALSE, warning=FALSE, include=FALSE}
 knitr::opts_chunk$set(cache = FALSE)
-rm(list = ls()) 
+#rm(list = ls()) 
 library(MCMCglmm)
 library(lme4)
 library(coda)
@@ -32,21 +32,22 @@ library(writexl)
 
 # Introduction
 
-The goal of this script is to estimate the BLUP values for the phenotypic data that will be used to evaluate the genomic offset predictions. BLUP estimates allow us to generate phenotypic population values for each trait while accounting for covariates, such as genotype for clones, tree ID when we have multiple measurements per tree, and tree size to account for age in growth-related traits.
-Depending on the trait, we will select a specific period for climate data extraction. For each trait, the initial year is 1992 (the year of establishment of the clonal bank), with the following end years:   
+The goal of this script is to estimate BLUP values for the phenotypic data, which will be used to evaluate genomic offset predictions. BLUP estimates allow us to generate population-level phenotypic values for each trait while accounting for covariates such as genotype for clones, tree ID when multiple measurements per tree exist, and tree size to account for age in growth-related traits.
+
+Depending on the trait, we will select a specific period for climate data extraction. For all traits, the initial year is 1992 (the year of establishment of the clonal bank), with the following end years:  
 - 2021 for leaf thickness  
 - 2012 for shoot volume, stem length, spring elongation, and total open male strobili  
 
 # Phenotypic data
 
-We loaded the phenotypic traits associated with: 
+We loaded the phenotypic traits associated with:
 
 Growth -> Shoot volume
 Growth_pheno -> spring elongation
 Repro_pheno -> total open strobili
 leaf_traits -> leaf thickness
 
-The first step is to load the functions that was used in the analyses. 
+The first step is to load the functions used in the analyses.
 ```{r function}
 clean.MCMC <- function(x) {
   sols <- summary(x)$solutions  ## pull out relevant info from model summary
@@ -64,7 +65,6 @@ clean.MCMC <- function(x) {
   modelTerms <- as.data.frame(bind_rows(fixed, random, residual))  # merge it all together
 }
 
-
 plot.estimates <- function(x) {
   if (class(x) != "summary.mcmc")
     x <- summary(x)
@@ -80,7 +80,6 @@ plot.estimates <- function(x) {
   arrows(x$quantiles[,1], n:1, x$quantiles[,5], n:1, code=0)
   abline(v=0, lty=2)
 }
-
 
 myFun_h2Qst1 <- function(mcmc){  
   out <- c(
@@ -120,7 +119,7 @@ myFun_h2Qst2 <- function(mcmc){
   return(out)}
 ```
 
-## data
+## Data
 ```{r phenotypic data}
 list_traits <- c("Shoot_Growth","Basal_area","Shoot_Elongation","Male_Strobili","leaf_traits")
 list_names <- c("growth","growth_bis","growth_pheno","repro_pheno","leaf_traits")
@@ -139,19 +138,19 @@ assign(paste0("phenotypic_data_",name),phenotypic_data)
 
 ## Selection of the period
 
-For each traits, we calculated average values across years as traits values in a given year are influenced by conditions and events from previous years. We retained the maximum number of sampling years while also maximizing the number of trees. 
+For each trait, we calculated average values across years, as trait values in a given year are influenced by conditions and events from previous years. We retained the maximum number of sampling years while also maximizing the number of trees.
 ```{r Growth, message=FALSE, warning=FALSE}
 #Growth
 
 ##Shootvol
-#identify the number of measurement per plant
+#Identify the number of measurement per plant
 phenotypic_data_growth_table <- data.frame(table(phenotypic_data_growth$Plant))
 
-#filter the number of measurement to keep the maximum number of individuals
+#Filter the number of measurement to keep the maximum number of individuals
 phenotypic_data_growth_filtered <- phenotypic_data_growth %>%
   filter(Plant %in% phenotypic_data_growth_table$Var1[phenotypic_data_growth_table$Freq == 4])
 
-#mean values of the traits per plant
+#Mean values of the traits per plant
 mean_traits_shootvol <- phenotypic_data_growth_filtered %>%
   group_by(Plant) %>%
   summarize(mean_AverageShootVolume = mean(AverageShootVolume.mm3, na.rm = TRUE),
@@ -159,7 +158,7 @@ mean_traits_shootvol <- phenotypic_data_growth_filtered %>%
 
 mean_traits_shootvol_merge <- merge(mean_traits_shootvol,phenotypic_data_growth,"Plant")
 
-#keep only one value per plant (ex: 2012, it's not only the values of 2012)
+#Keep only one value per plant (ex: 2012, it's not only the values of 2012)
 mean_traits_growth_f <- mean_traits_shootvol_merge %>%
   filter(Year == 2012)
 
@@ -240,23 +239,23 @@ mean_traits_leaftraits_f <- mean_traits_leaftraits_merge %>%
 
 ## Selection of the populations with enought trees
 
-We also wanted to check the number of measured individuals per population, retaining only populations with more than two individuals
-```{r number of measured indiv per pop, eval=F,echo=T}
+We also checked the number of measured individuals per population, retaining only populations with more than two individuals.
+```{r number of measured indiv per pop}
 table(mean_traits_growth_f$Population)
-#We remove the ACEBDO, LASENIA
+#We removed the ACEBDO, LASENIA
 
 table(mean_traits_growth_pheno_f$Population)
-#We remove the ACEBDO, ALCOY, LASENIA Quesada pop
+#We removed the ACEBDO, ALCOY, LASENIA Quesada pop
 
 table(mean_traits_repro_pheno_f$Population)
-#We remove the BOCAHUERGANO, JERTE, LASENIA,PUEBLALILLO and RASQUERA 
+#We removed the BOCAHUERGANO, JERTE, LASENIA,PUEBLALILLO and RASQUERA 
 
 table(mean_traits_leaftraits_f$Population)
 #we can remove: ACEBEDO, ALCOY, LASENIA, and QUESADA
 ```
 ## Graphical visualization
 
-To select the type of distribution we used in the GLMM models, we investigated the shape of the data distribution for each traits
+To select the type of distribution used in the GLMM models, we investigated the shape of the data distribution for each trait.
 ```{r phenotypic_df_config}
 
 list_traits <- c("growth","growth_bis","growth_pheno","repro_pheno","leaftraits")
@@ -286,26 +285,26 @@ hist(phenotypic_data_leaftraits$mean_leafthickness)
 
 # MCMC GLMM models
     
-We can now run the MCMC GLMM models for each of the traits. We need to specify the priors as we are working with Bayesian models. We chose a non-informative prior due to the lack of prior information. We also set the number of iterations to 1,500,000, the burn-in period to 50,000, and the thinning interval to 500, sampling every 500 iterations. We ran each model four times per trait (4 MCMC chains) to ensure stability. All traits follow a Gaussian distribution with continuous data.
+We can now run the MCMC GLMM models for each trait. We need to specify the priors, as we are working with Bayesian models. We chose a non-informative prior due to the lack of prior information. The number of iterations was set to 1,500,000, with a burn-in period of 50,000 and a thinning interval of 500, sampling every 500 iterations. Each model was run four times per trait (four MCMC chains) to ensure stability. All traits follow a Gaussian distribution with continuous data.
 
 ## Trait related to growth
     
 ### Shoot Volume
 
-For growth traits, as trees in the clonal bank vary in age, we used stem length as a covariate to account for differences in shoot volume associated with older trees. 
+For growth traits, as trees in the clonal bank vary in age, we used stem length as a covariate to account for differences in shoot volume associated with tree age. 
 
-```{r shootvolume model,echo=T,eval=F}
+```{r shootvolume model, eval=FALSE, include=FALSE}
 set.seed(3)
 
 #phenotypic_data_growth$Sex <- as.factor(phenotypic_data_growth$Sex)
 #phenotypic_data_growth_wo_Na <- phenotypic_data_growth %>%group_by(Sex) %>% drop_na()
 
-#set the prior info for the fixed variables: year and the randoms ones: Population and Plant
+#Set the prior info for the fixed variables: year and the randoms ones: Population and Plant
 prior_ShootVol=list(R=list(V=1, nu=0.002),G=list((G1=list(V=1, nu=0.002)),(G2=list(V=1, nu=0.002)),(G3=list(V=1, nu=0.002))))
 
-#we can perform the model
+#We can perform the model
 ShootVol<- mclapply(1:4, function(i) {#we can perform 4 MCMC 
-  ShootVol<-MCMCglmm(mean_AverageShootVolume~Sex,random=~Population + Genet +mean_StemLength,prior=prior_ShootVol, family="gaussian", nitt=1500000, burnin=50000, thin=500, data=phenotypic_data_growth_wo_Na, pr=TRUE, verbose=F) #the pheno is explain by the year as fixed because few number of parameters and by the Population and Plant factors, we are following a gaussian law due to the quantitative continuous type of the response variable (the pheno)
+  ShootVol<-MCMCglmm(mean_AverageShootVolume~1,random=~Population + Genet +mean_StemLength,prior=prior_ShootVol, family="gaussian", nitt=1500000, burnin=50000, thin=500, data=phenotypic_data_growth_wo_Na, pr=TRUE, verbose=F)
 }, mc.cores=1)
 
 #save the chains
@@ -318,10 +317,31 @@ load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data
 growth_model_wo_plantID <- ShootVol_model_wo_plantID
 ```
 
+New version by putting mean_StemLength as a fixed effect to calculate the slope and not and individual effect of each individuals (too much parameters)
+```{r shootvolume model new, eval=FALSE, include=FALSE}
+set.seed(3)
+
+phenotypic_data_growth$Sex <- as.factor(phenotypic_data_growth$Sex)
+phenotypic_data_growth_wo_Na <- phenotypic_data_growth %>%group_by(Sex) %>% drop_na()
+
+#Set the prior info for the fixed variables: year and the randoms ones: Population and Plant
+prior_ShootVol=list(R=list(V=1, nu=0.002),G=list((G1=list(V=1, nu=0.002)),(G2=list(V=1, nu=0.002))))
+
+#We can perform the model
+ShootVol<- mclapply(1:4, function(i) {#we can perform 4 MCMC 
+  ShootVol<-MCMCglmm(mean_AverageShootVolume~mean_StemLength,random=~Population + Genet,prior=prior_ShootVol, family="gaussian", nitt=1500000, burnin=50000, thin=500, data=phenotypic_data_growth_wo_Na, pr=TRUE, verbose=F)
+}, mc.cores=1)
+
+#save the chains
+ShootVol_wo_plantID_correcteffect<- ShootVol
+growth_newformulation_model_wo_plantID <- ShootVol
+save(ShootVol_wo_plantID_correcteffect,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/mean_years/ShootVol_wo_plantID_correcteffect.rda")
+```
+
 ## Trait related to growth phenology
 
 ### Spring elongation
-```{r springelong model,echo=T,eval=F}
+```{r springelong model, eval=FALSE, include=FALSE}
 set.seed(3)
 #phenotypic_data_growth_pheno_wo_Na <- phenotypic_data_growth_pheno %>%group_by(Sex) %>% drop_na()
 #phenotypic_data_growth_pheno_wo_Na$Sex <- as.factor(phenotypic_data_growth_pheno_wo_Na$Sex)
@@ -348,7 +368,7 @@ growth_pheno_model_wo_plantID <- springelong_model_wo_plantID
 ## Trait related to reproductive phenology
 
 ### Proportion open strobili
-```{r mature Strobili model,echo=T,eval=F}
+```{r mature Strobili model, eval=FALSE, include=FALSE}
 set.seed(3)
 #set the prior info for the fixed variables: year and the randoms ones: Population and Plant
 prior_openstrob=list(R=list(V=1, nu=0.002),G=list((G1=list(V=1, nu=0.002)),(G2=list(V=1, nu=0.002))))
@@ -372,7 +392,7 @@ repro_pheno_model_wo_plantID <- openstrob_model_wo_plantID
 ## Water statues 
 
 ### Leaf thickness
-```{r Leaf thickness model,echo=T,eval=F}
+```{r Leaf thickness model, eval=FALSE, include=FALSE}
 set.seed(3)
 #set the prior info for the fixed variables: year and the randoms ones: Population and Plant
 prior_leaftraits=list(R=list(V=1, nu=0.002),G=list((G1=list(V=1, nu=0.002)),(G2=list(V=1, nu=0.002))))
@@ -412,25 +432,25 @@ for(x in 1:2){
   name <- list_name[x]
   
   acf_list <- lapply(model_pheno, function(model) {
-  # Extract the MCMC samples for the random effects of provenance
+  #Extract the MCMC samples for the random effects of provenance
   mcmc_samples <- mcmc(model$VCV[, name])  
-  # Calculate ACF
-  acf_values <- acf(as.numeric(mcmc_samples), plot = FALSE)  # Convert to numeric if needed
+  #Calculate ACF
+  acf_values <- acf(as.numeric(mcmc_samples), plot = FALSE)  #Convert to numeric if needed
   return(acf_values)
 })
   
   # Plot the first ACF
 plot(acf_list[[1]], main=paste0("Autocorrelation for ",name," Random Effect ",name_pheno), col="black", lwd=2)
 
-colors <- c("red", "blue", "green")  # Colors for the additional chains
+colors <- c("red", "blue", "green")  #Colors for the additional chains
 for (i in 2:length(acf_list)) {
   lines(acf_list[[i]]$lag, acf_list[[i]]$acf, col=colors[i-1], lwd=2)
 }
-# Add a legend to distinguish between the chains
+#Add a legend to distinguish between the chains
 legend("topright", legend=paste("Chain", 1:length(model_pheno)), col=c("black", colors), lwd=2)
 
 plot
-#save
+#Save
 png(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/figures_wo_plantID/checkmodel/autocorrelation/Autocorrelation_period_",name,"_",name_pheno,".png"));plot(acf_list[[1]], main=paste0("Autocorrelation for ",name," Random Effect ",name_pheno), col="black", lwd=2)
 colors <- c("red", "blue", "green")
 for (i in 2:length(acf_list)) {
@@ -451,20 +471,20 @@ for(i in 1:length(list_model_rmarkdown)){
 for(x in 1:2){
   name <- list_name[x]
   acf_list <- lapply(model_pheno, function(model) {
-  # Extract the MCMC samples for the random effects of provenance
+  #Extract the MCMC samples for the random effects of provenance
   mcmc_samples <- mcmc(model$VCV[, name])  
   # Calculate ACF
-  acf_values <- acf(as.numeric(mcmc_samples), plot = FALSE)  # Convert to numeric if needed
+  acf_values <- acf(as.numeric(mcmc_samples), plot = FALSE)  #Convert to numeric if needed
   return(acf_values)
 })
   # Plot the first ACF
 plot(acf_list[[1]], main=paste0("Autocorrelation for ",name," Random Effect ",name_pheno), col="black", lwd=2)
 
-colors <- c("red", "blue", "green")  # Colors for the additional chains
+colors <- c("red", "blue", "green")  #Colors for the additional chains
 for (i in 2:length(acf_list)) {
   lines(acf_list[[i]]$lag, acf_list[[i]]$acf, col=colors[i-1], lwd=2)
 }
-# Add a legend to distinguish between the chains
+#Add a legend to distinguish between the chains
 legend("topright", legend=paste("Chain", 1:length(model_pheno)), col=c("black", colors), lwd=2)
 plot
   }
@@ -473,7 +493,7 @@ plot
   
 ## Chains convergence  
   
-Then, we ensured that the MCMC chains were converging.
+Next, we ensured that the MCMC chains were converging.
 ```{r plot of MCMC chains, echo=T, eval=F}
 for(i in 1:length(list_model)){
 model_pheno <- get(paste0(list_model[i],"_model_wo_plantID"))
@@ -483,18 +503,18 @@ for(x in 1: length(list_name)){
   
   name <- list_name[x]
   
-  # Create MCMC lists for overall random effects (aggregated)
+  #Create MCMC lists for overall random effects (aggregated)
 mcmc_list <- mcmc.list(lapply(model_pheno, function(model) {
-  # Aggregate random effects for provenance
+  #Aggregate random effects for provenance
   mcmc(model$VCV[, name])
 }))
 
-par(mfrow=c(2,1), mar=c(4,4,2,1))  # Two plots: one for provenance, one for plant ID
+par(mfrow=c(2,1), mar=c(4,4,2,1))  #Two plots: one for provenance, one for plant ID
 
-# Plot trace plot for overall provenance random effect
+#Plot trace plot for overall provenance random effect
 plot(mcmc_list, auto.layout=FALSE, main=paste0("Trace Plot for Overall ",name," Random Effect ",name_pheno), col=c("red", "blue", "green", "black"))
 
-#save
+#Save
 png(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/figures_wo_plantID/checkmodel/convergence/MCMC_period_",name,"_",name_pheno,".png"));par(mfrow=c(2,1), mar=c(4,4,2,1))
 plot(mcmc_list, auto.layout=FALSE, main=paste0("Trace Plot for Overall ",name," Random Effect ",name_pheno), col=c("red", "blue", "green", "black"));dev.off()
   }
@@ -507,19 +527,19 @@ model_pheno <- get(paste0(list_model_rmarkdown[i],"_model_wo_plantID"))
   name_pheno <- list_model_rmarkdown[i]
 for(x in 1: length(list_name)){
   name <- list_name[x]
-  # Create MCMC lists for overall random effects (aggregated)
+  #Create MCMC lists for overall random effects (aggregated)
 mcmc_list <- mcmc.list(lapply(model_pheno, function(model) {
-  # Aggregate random effects for provenance
+  #Aggregate random effects for provenance
   mcmc(model$VCV[, name])
 }))
-par(mfrow=c(2,1), mar=c(4,4,2,1))  # Two plots: one for provenance, one for plant ID
-# Plot trace plot for overall provenance random effect
+par(mfrow=c(2,1), mar=c(4,4,2,1))  #Two plots: one for provenance, one for plant ID
+#Plot trace plot for overall provenance random effect
 plot(mcmc_list, auto.layout=FALSE, main=paste0("Trace Plot for Overall ",name," Random Effect ",name_pheno), col=c("red", "blue", "green", "black"))
   }
 }
 ```
 
-Graphically, the chains appear to converge. We calculated the Gelman-Rubin index to further investigate this: 
+Graphically, the chains appear to converge. We calculated the Gelman-Rubin index to further assess convergence. 
 ```{r evaluating the models}
 list_model <- c("growth","growth_pheno","repro_pheno","leafthickness")#"growth_bis","LMA","StomDens","D13C"
 
@@ -527,18 +547,18 @@ gelman_rubin_results <- list()
 
 for(i in 1:length(list_model)){
   
-  # Get the model object
+  #Get the model object
   model_pheno <- get(paste0(list_model[i], "_model_wo_plantID"))
   name_pheno <- list_model[i]
   
-  # Combine the MCMC chains into a single mcmc.list
+  #Combine the MCMC chains into a single mcmc.list
   chaine_mc <- lapply(model_pheno, function(m) m$Sol)
   chaine_mc <- do.call(mcmc.list, chaine_mc)
   
-  # Gelman-Rubin (GR) criterion to assess convergence across MCMC chains
+  #Gelman-Rubin (GR) criterion to assess convergence across MCMC chains
   GRcriterion_index <- gelman.diag(chaine_mc)
   
-  # Store the summary of the GR criterion in the list
+  #Store the summary of the GR criterion in the list
   gelman_rubin_results[[name_pheno]] <- list(
     mpsrf = GRcriterion_index$mpsrf
   )
@@ -546,11 +566,11 @@ for(i in 1:length(list_model)){
 gelman_rubin_results
 ```
 
-We can see that the Gelman-Rubin values are below 1.1, which is defined as the threshold for convergence.
+We can see that the Gelman-Rubin values are below 1.1, which is the defined threshold for convergence.
 
 ## Similarity of the posterior distribution across chains
 
-We also looked at the posterior distribution to investigate the convergence of the MCMC results.
+We also examined the posterior distributions to assess the convergence of the MCMC results.
 ```{r posterior distribution, echo=T, eval=F}
 for(i in 1:length(list_model)){
   model_pheno <- get(paste0(list_model[i],"_model_wo_plantID"))
@@ -561,28 +581,28 @@ for(x in 1:length(list_name)){
   name <-list_name[x]
   
   density_list <- lapply(model_pheno, function(model) {
-  # Extract the MCMC samples for the random effects of provenance
+  #Extract the MCMC samples for the random effects of provenance
   mcmc_samples <- as.numeric(mcmc(model$VCV[, name])) 
-  # Calculate density
+  #Calculate density
   density_values <- density(mcmc_samples)
   return(density_values)
 })
-  #limit of the plot
+  #Limit of the plot
   max_density_value <- max(sapply(density_list, function(d) max(d$y)))
   
-  # Plot the first density
+  #Plot the first density
 plot(density_list[[1]], main=paste0("Posterior distribution of the ",name," Random Effect value ",name_pheno), col="black", lwd=2, xlab="Value", ylab="Density",ylim=c(0, max_density_value * 1.02))
 
-# Overlay the remaining densities
-colors <- c("red", "blue", "green")  # Colors for the additional chains
+#Overlay the remaining densities
+colors <- c("red", "blue", "green")  #Colors for the additional chains
 for (i in 2:length(density_list)) {
   lines(density_list[[i]], col=colors[i-1], lwd=2)
 }
 
-# Add a legend to distinguish between the chains
+#Add a legend to distinguish between the chains
 legend("topright", legend=paste("Chain", 1:length(model_pheno)), col=c("black", colors), lwd=2)
 
-#save
+#Save
 png(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/figures_wo_plantID/postdistrib/Posterior_distrib_period_",name,"_",name_pheno,".png"));plot(density_list[[1]], main=paste0("Posterior distribution of the ",name," Random Effect value ",name_pheno), col="black", lwd=2, xlab="Value", ylab="Density",ylim=c(0, max_density_value * 1.02))
 colors <- c("red", "blue", "green")  # Colors for the additional chains
 for (i in 2:length(density_list)) {
@@ -594,30 +614,29 @@ legend("topright", legend=paste("Chain", 1:length(model_pheno)), col=c("black", 
 ```
 
 ```{r Rmarkdown 3, include=FALSE}
-
 for(i in 1:length(list_model_rmarkdown)){
   model_pheno <- get(paste0(list_model_rmarkdown[i],"_model_wo_plantID"))
   name_pheno <- list_model_rmarkdown[i]
 for(x in 1:length(list_name)){
   name <-list_name[x]
   density_list <- lapply(model_pheno, function(model) {
-  # Extract the MCMC samples for the random effects of provenance
+  #Extract the MCMC samples for the random effects of provenance
   mcmc_samples <- as.numeric(mcmc(model$VCV[, name]))
-  # Calculate density
+  #Calculate density
   density_values <- density(mcmc_samples)
   return(density_values)
 })
-  #limit of the plot
+  #Limit of the plot
   max_density_value <- max(sapply(density_list, function(d) max(d$y)))
-  # Plot the first density
+  #Plot the first density
 plot(density_list[[1]], main=paste0("Posterior distribution of the ",name," Random Effect value ",name_pheno), col="black", lwd=2, xlab="Value", ylab="Density",ylim=c(0, max_density_value * 1.02))
 
-# Overlay the remaining densities
-colors <- c("red", "blue", "green")  # Colors for the additional chains
+#Overlay the remaining densities
+colors <- c("red", "blue", "green")  #Colors for the additional chains
 for (i in 2:length(density_list)) {
   lines(density_list[[i]], col=colors[i-1], lwd=2)
 }
-# Add a legend to distinguish between the chains
+#Add a legend to distinguish between the chains
 legend("topright", legend=paste("Chain", 1:length(model_pheno)), col=c("black", colors), lwd=2)
   }
 }
@@ -625,23 +644,21 @@ legend("topright", legend=paste("Chain", 1:length(model_pheno)), col=c("black", 
 
 # Blups values
 
-Finally, we extracted the BLUPs values from the models: 
+Finally, we extracted the BLUP values from the models.
 
-To calculate the BLUPs, we used the mean BLUP values across the four MCMC runs.
+To calculate the BLUPs, we used the mean BLUP value across the four MCMC runs.
 ```{r blups estimate}
-
 #list_model <- c("growth","growth_bis","growth_pheno","repro_pheno","leafthickness","LMA","StomDens","D13C")
 list_model <- c("growth","growth_pheno","repro_pheno","leafthickness")#"growth_bis","LMA","StomDens"
 
 for(i in 1:length(list_model)){
-  
   model_pheno <- get(paste0(list_model[i],"_model_wo_plantID"))
   name_pheno <- list_model[i]
   
 #BLUPs values
 for(x in 1:4){
   
-  model <- model_pheno[[x]] #extract the chains from the model 
+  model <- model_pheno[[x]] #Extract the chains from the model 
   blups<-data.frame(posterior.mode(model$Sol))
   assign(paste0("blups_",name_pheno,"_",x),blups)
   }
@@ -659,12 +676,701 @@ for(i in 1:length(list_model)){
   Blups_df <- data.frame(MC1,MC2,MC3,MC4)
   Blups_df$mean_blup <- rowMeans(Blups_df)
   
-#write_xlsx(data.frame(row.names(Blups_df),Blups_df[,c(5)]),paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/BLUPs_mean/Blups_",name_pheno,"final_period.xlsx"))
+write_xlsx(data.frame(row.names(Blups_df),Blups_df[,c(5)]),paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/BLUPs_mean/Blups_",name_pheno,"final_period.xlsx"))
 }
 ```
 
 
-# Draft: 
+# Draft
+
+```{r Correlation two type of Blups}
+df_growth <- read_excel("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/BLUPs_mean/Blups_growthfinal_period.xlsx")
+
+df_growth <- df_growth[c(2:27),]
+
+df_growth_V2 <- read_excel("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/BLUPs_mean/Blups_growth_V2final_period.xlsx")
+df_growth_V2 <- df_growth_V2[c(2:27),]
+
+cor(df_growth$Blups_df...c.5..,df_growth_V2$Blups_df...c.5..)
+```
+
+We retained the full posterior distribution information rather than using a single point estimate, as suggested by Reviewer 2 to keep error information.
+
+```{r retained full posterior, eval=FALSE, include=FALSE}
+# 1. Define trait models and population filters
+traits <- c("growth", "growth_pheno", "repro_pheno", "leafthickness")
+pop_filters <- list(
+  growth = c("ACEBEDO", "LASENIA"),
+  growth_pheno = c("ACEBEDO", "ALCOY", "LASENIA", "QUESADA"),
+  repro_pheno = c("BOCAHUERGANO", "JERTE", "LASENIA", "PUEBLALILLO", "RASQUERA"),
+  leafthickness = c("ACEBEDO", "ALCOY", "LASENIA", "QUESADA")
+)
+
+# 2. Extract posterior random effects for "Population" from each trait model
+extract_population_effects <- function(model_list) {
+  pop_effects_list <- lapply(model_list, function(model) {
+    ranef_matrix <- model$Sol[, grep("Population", colnames(model$Sol)), drop = FALSE]
+    # clean names
+    colnames(ranef_matrix) <- gsub(".*Population", "", colnames(ranef_matrix))
+    return(as.matrix(ranef_matrix))
+  })
+  
+  # Stack chains and return a single matrix
+  do.call(rbind, pop_effects_list)
+}
+
+posterior_samples <- list()
+
+for (trait in traits) {
+  model <- get(paste0(trait, "_model_wo_plantID"))  # list of 4 chains
+  posterior_matrix <- extract_population_effects(model)
+  posterior_samples[[trait]] <- posterior_matrix
+}
+
+# 3. Align population names and build 3D posterior array
+all_populations <- unique(unlist(lapply(posterior_samples, colnames)))
+iterations_total <- nrow(posterior_samples[[1]]) * 4
+
+posterior_array <- array(NA, dim = c(iterations_total, length(all_populations), length(traits)),
+                         dimnames = list(NULL, all_populations, traits))
+
+for (t in traits) {
+  pops_t <- colnames(posterior_samples[[t]])
+  pop_idx <- match(pops_t, all_populations)
+  posterior_array[, pop_idx, t] <- posterior_samples[[t]]
+}
+
+# 4. Apply population exclusions
+for (t in traits) {
+  excluded_pops <- pop_filters[[t]]
+  if (!is.null(excluded_pops)) {
+    idx_trait <- which(traits == t)
+    idx_pops <- which(all_populations %in% excluded_pops)
+    posterior_array[, idx_pops, idx_trait] <- NA
+  }
+}
+
+# 5. Standardize posterior values across populations (per trait, per iteration)
+posterior_array_scaled <- posterior_array
+for (i in 1:dim(posterior_array)[1]) {  # loop over iterations
+  for (j in 1:dim(posterior_array)[3]) {  # loop over traits
+    values <- posterior_array[i, , j]
+    min_val <- min(values, na.rm = TRUE)
+    max_val <- max(values, na.rm = TRUE)
+    if (!is.na(min_val) && !is.na(max_val) && max_val != min_val) {
+      posterior_array_scaled[i, , j] <- (values - min_val) / (max_val - min_val)
+    }
+  }
+}
+
+# 6. Compute Composite Fitness Index (CFI) for each iteration and population
+CFI_matrix <- apply(posterior_array_scaled, c(1, 2), function(x) {
+  valid_vals <- x[!is.na(x)]
+  if (length(valid_vals) == 0) return(NA)
+  mean(valid_vals)
+})
+
+# Result: CFI_matrix [iterations × populations]
+CFI_summary <- data.frame(
+  Population = all_populations,
+  Mean_CFI = apply(CFI_matrix, 2, mean, na.rm = TRUE),
+  CI_lower = apply(CFI_matrix, 2, quantile, probs = 0.025, na.rm = TRUE),
+  CI_upper = apply(CFI_matrix, 2, quantile, probs = 0.975, na.rm = TRUE)
+)
+
+# View results
+print(CFI_summary)
+```
+
+```{r Load GO predictions, eval=FALSE, include=FALSE}
+#RDA standard GO
+list_RDA_standard <- c("all","random","random_same_AF","LC","CG","random_AF_V2","all_outliers")
+list_period <- c("CG2012","CG2021")
+for(i in 1: length(list_period)){
+  
+    period <- list_period[i]
+
+for(x in 1:length(list_RDA_standard)){
+  name <- list_RDA_standard[x]
+
+  
+  load(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/standard_GO/RDA/data/CG_period/GO_RDA_",name,"_",period,"_Taxus.Rdata"))
+  }
+}
+
+#GF GO
+list_GF_standard <- c("all","random","random_same_AF","LC","CG","random_AF_V2","all_outliers")
+list_period <- c("2012","2021")
+for(i in 1: length(list_period)){
+  
+   period <- list_period[i]
+  
+for(x in 1:length(list_GF_standard)){
+  
+  name <- list_GF_standard[x]
+
+  
+  load(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/Standard_GO/GF/data/CG_period/GO_standard_GF_",name,"_",period,".Rdata"))
+}
+}
+```
+
+
+```{r correlation with GO, eval=FALSE, include=FALSE}
+posterior_correlation <- function(posterior_matrix, GO_df, GO_col = 2) {
+  # Ensure population names match
+  common_pops <- intersect(colnames(posterior_matrix), GO_df$Population)
+  
+  # Reorder GO vector to match posterior matrix column order
+  GO_vector <- GO_df[match(common_pops, GO_df$Population), GO_col]
+  
+  # Subset posterior to matching populations
+  posterior_sub <- posterior_matrix[, common_pops, drop = FALSE]
+  
+  # Compute correlation for each iteration
+  cor_values <- apply(posterior_sub, 1, function(x) {
+    cor(x, GO_vector, use = "pairwise.complete.obs")
+  })
+  
+  return(cor_values)
+}
+
+# ---- Prepare Output ----
+posterior_cor_results <- data.frame(
+  Method = character(),
+  Model = character(),
+  Trait = character(),
+  Mean = numeric(),
+  CI_lower = numeric(),
+  CI_upper = numeric(),
+  Prop_Positive = numeric(),
+  stringsAsFactors = FALSE
+)
+
+list_GO_2012_RDA <- c("GO_RDA_all_CG2012_Taxus", "GO_RDA_random_same_AF_CG2012_Taxus", 
+                      "GO_RDA_LC_CG2012_Taxus","GO_RDA_random_AF_V2_CG2012_Taxus","GO_RDA_all_outliers_CG2012_Taxus")#"GO_RDA_random_CG2012_Taxus",
+list_GO_2021_RDA <- c("GO_RDA_all_CG2021_Taxus", "GO_RDA_random_same_AF_CG2021_Taxus", 
+                      "GO_RDA_LC_CG2021_Taxus","GO_RDA_random_AF_V2_CG2021_Taxus","GO_RDA_all_outliers_CG2021_Taxus")#"GO_RDA_random_CG2021_Taxus",
+
+# List of Gradient Forest genomic offsets for 2012 and 2021
+list_GO_2012_GF <- c("GO_standard_GF_all_2012", "GO_standard_GF_random_same_AF_2012", 
+                     "GO_standard_GF_LC_2012","GO_standard_GF_random_AF_V2_2012","GO_standard_GF_all_outliers_2012")#,"GO_standard_GF_random_2012"
+list_GO_2021_GF <- c("GO_standard_GF_all_2021", "GO_standard_GF_random_same_AF_2021", 
+                     "GO_standard_GF_LC_2021","GO_standard_GF_random_AF_V2_2021","GO_standard_GF_all_outliers_2021")#"GO_standard_GF_random_2021",
+
+# Combine lists into one for easier processing
+list_GO_2012 <- c(list_GO_2012_RDA, list_GO_2012_GF)
+list_GO_2021 <- c(list_GO_2021_RDA, list_GO_2021_GF)
+
+# Corresponding methods and models
+list_method <- c(rep("RDA", 5), rep("GF", 5))  # 4 RDA models and 4 GF models
+
+list_model <- c("all", "random_same_AF", "LC", "all", "random_same_AF", "LC")#"random",,"random"
+list_model <- c("all", "random_same_AF", "outlier","random_same_AF_V2","all_outliers", "all", "random_same_AF", "outlier","random_same_AF_V2","all_outliers")#"random",,"random"
+
+# Traits considered
+#list_traits <- c("growth","growth_pheno","repro_pheno","leafthickness","LMA","StomDens","D13C")
+list_traits <- c("growth","growth_pheno","repro_pheno","leafthickness","composite_fitness")
+
+
+# ---- Loop through GO predictions ----
+for (i in 1:10) {
+  GO_pred_2012 <- get(list_GO_2012[i])
+  GO_pred_2021 <- get(list_GO_2021[i])
+  method <- list_method[i]
+  model <- list_model[i]
+  
+  for (trait in list_traits) {
+    
+    # Choose trait-specific posterior matrix
+    if (trait == "composite_fitness") {
+      posterior_matrix <- CFI_matrix
+      colnames(posterior_matrix) <- gsub("^\\.+", "", colnames(posterior_matrix))
+      GO_df <- GO_pred_2021  # Use 2021 for CFI
+    } else {
+      posterior_matrix <- posterior_samples[[trait]]
+      colnames(posterior_matrix) <- gsub("^\\.+", "", colnames(posterior_matrix))
+      GO_df <- GO_pred_2012  # Use 2012 for individual traits
+    }
+    
+    # Calculate posterior correlation distribution
+    cor_samples <- posterior_correlation(posterior_matrix, GO_df)
+    
+    # Summarize
+    posterior_cor_results <- rbind(posterior_cor_results, data.frame(
+      Method = method,
+      Model = model,
+      Trait = trait,
+      Mean = mean(cor_samples, na.rm = TRUE),
+      CI_lower = quantile(cor_samples, 0.025, na.rm = TRUE),
+      CI_upper = quantile(cor_samples, 0.975, na.rm = TRUE),
+      Prop_Positive = mean(cor_samples > 0, na.rm = TRUE)
+    ))
+  }
+}
+
+# ---- Inspect results ----
+print(posterior_cor_results)
+
+hist(posterior_cor_results$Mean, breaks = 30, main = "Posterior correlation", xlab = "Correlation with GO")
+abline(v = 0, col = "red", lty = 2)
+```
+
+
+## Mean value of CFI after accounting for uncertainty in trait values
+
+```{r Pearson correlation, eval=FALSE, include=FALSE}
+# List of RDA genomic offsets for 2012 and 2021
+list_GO_2012_RDA <- c("GO_RDA_all_CG2012_Taxus","GO_RDA_random_CG2012_Taxus", "GO_RDA_random_same_AF_CG2012_Taxus", 
+                      "GO_RDA_LC_CG2012_Taxus","GO_RDA_random_AF_V2_CG2012_Taxus","GO_RDA_all_outliers_CG2012_Taxus")
+list_GO_2021_RDA <- c("GO_RDA_all_CG2021_Taxus","GO_RDA_random_CG2021_Taxus", "GO_RDA_random_same_AF_CG2021_Taxus", 
+                      "GO_RDA_LC_CG2021_Taxus","GO_RDA_random_AF_V2_CG2021_Taxus","GO_RDA_all_outliers_CG2021_Taxus")
+
+# List of Gradient Forest genomic offsets for 2012 and 2021
+list_GO_2012_GF <- c("GO_standard_GF_all_2012","GO_standard_GF_random_2012", "GO_standard_GF_random_same_AF_2012", 
+                     "GO_standard_GF_LC_2012","GO_standard_GF_random_AF_V2_2012","GO_standard_GF_all_outliers_2012")
+list_GO_2021_GF <- c("GO_standard_GF_all_2021","GO_standard_GF_random_2021", "GO_standard_GF_random_same_AF_2021", 
+                     "GO_standard_GF_LC_2021","GO_standard_GF_random_AF_V2_2021","GO_standard_GF_all_outliers_2021")
+
+# Combine lists into one for easier processing
+list_GO_2012 <- c(list_GO_2012_RDA, list_GO_2012_GF)
+list_GO_2021 <- c(list_GO_2021_RDA, list_GO_2021_GF)
+
+# Corresponding methods and models
+list_method <- c(rep("RDA", 6), rep("GF", 6))  # 4 RDA models and 4 GF models
+
+list_model <- c("all","random", "random_same_AF", "LC", "all","random", "random_same_AF", "LC")
+list_model <- c("all","random", "random_same_AF", "outlier","random_same_AF_V2","all_outliers", "all","random", "random_same_AF", "outlier","random_same_AF_V2","all_outliers")
+
+# Traits considered
+#list_traits <- c("growth","growth_pheno","repro_pheno","leafthickness","LMA","StomDens","D13C")
+list_traits <- c("CFI_summary")
+
+# Create an empty dataframe to store correlations
+correlation_df <- data.frame(
+  Method = character(),
+  Model = character(),
+  Trait = character(),
+  Correlation = numeric(),
+  P_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Loop over each Genomic Offset for both RDA and GF models
+for(i in 1:12) {  # Now we have 8 models (4 RDA + 4 GF)
+  GO_pred_2012 <- get(list_GO_2012[i])
+  GO_pred_2021 <- get(list_GO_2021[i])
+  method <- list_method[i]
+  model <- list_model[i]
+  
+  # Loop over each trait
+  for(x in 1:length(list_traits)) {
+    trait <- list_traits[x]
+    
+    # Use CG2021 data for Height, and CG2012 for other traits
+    if (trait == "Leafthickness" || trait=="CFI_summary") {
+      df_trait <- CFI_summary
+      df_trait$Population <- gsub("^\\.+", "", df_trait$Population)
+      # Merge data frames based on population for CG2021
+      merged_df <- merge(df_trait, GO_pred_2021, by = "Population", suffixes = c(".trait", ".GO"))
+    } else {
+      df_trait <- get(paste0("df_", trait,"_final"))
+      
+      # Merge data frames based on population for CG2012
+      merged_df <- merge(df_trait, GO_pred_2012, by = "Population", suffixes = c(".trait", ".GO"))
+    }
+    
+    # Calculate the correlation
+    correlation <- cor(merged_df[, 2], merged_df[, 5])
+    
+  pval <- cor.test(merged_df[, 2],merged_df[, 5])
+ P_value <- pval$p.value
+    
+    # Store the correlation in the dataframe
+    correlation_df <- rbind(correlation_df, data.frame(Method = method, Model = model, Trait = trait, Correlation = correlation, P_value= P_value))
+  }
+}
+# Print the correlation data frame
+#print(correlation_df)
+```
+
+
+
+
+
+
+
+
+## Phenotypic values not using BLUPs (not using population as a random factor), as suggested by Reviewer 2
+
+
+As the reviewer suggested, "Is BLUP for population i better than a simple mean for a given population? If yes, please explain how BLUP improves further inferences." We will test whether not using BLUPs provides similar results. To do this, we will run a model for each phenotypic trait accounting for covariates, then calculate the mean value for each individual grouped by population to obtain the phenotypic mean per population. 
+
+
+
+### Trait related to growth
+    
+#### Shoot Volume
+
+For growth traits, as trees in the clonal bank vary in age, we used stem length as a covariate to account for differences in shoot volume associated with tree age.
+
+```{r shootvolume model no blups test, eval=FALSE, include=FALSE}
+set.seed(3)
+
+phenotypic_data_growth$Sex <- as.factor(phenotypic_data_growth$Sex)
+phenotypic_data_growth_wo_Na <- phenotypic_data_growth %>%group_by(Sex) %>% drop_na()
+
+#set the prior info for the fixed variables: year and the randoms ones: Population and Plant
+prior_ShootVol=list(R=list(V=1, nu=0.002),G=list((G1=list(V=1, nu=0.002)),(G2=list(V=1, nu=0.002))))
+
+#we can perform the model
+ShootVol_covariates<- mclapply(1:4, function(i) {#we can perform 4 MCMC 
+  ShootVol_covariates<-MCMCglmm(mean_AverageShootVolume~1,random=~ Genet +mean_StemLength,prior=prior_ShootVol, family="gaussian", nitt=1500000, burnin=50000, thin=500, data=phenotypic_data_growth, pr=TRUE, verbose=F) #the pheno is explain by the year as fixed because few number of parameters and by the Population and Plant factors, we are following a gaussian law due to the quantitative continuous type of the response variable (the pheno)
+}, mc.cores=1)
+
+#save the chains
+growth_model_covariates<- ShootVol_covariates
+save(growth_model_covariates,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/Covariate_model/growth_model_covariates.rda")
+```
+
+```{r load the MCMC growth no blups test, eval=FALSE, include=FALSE}
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/Covariate_model/growth_model_covariates.rda")
+growth_model_covariates <- growth_model_covariates
+```
+
+```{r extract population values shootvol bis bis , eval=FALSE, include=FALSE}
+all_sols <- do.call(rbind, lapply(ShootVol_covariates, function(model) model$Sol))
+
+# Extract Genet random effects
+genet_effects_all <- all_sols[, grepl("^Genet\\.", colnames(all_sols))]
+
+# Compute posterior mean of each Genet effect across all samples
+genet_means <- colMeans(genet_effects_all)
+
+# Extract clean Genet names
+genet_names <- gsub("^Genet\\.", "", names(genet_means))
+genet_map <- data.frame(Genet = genet_names, genet_effect = genet_means)
+
+phenotypic_data_growth <- phenotypic_data_growth %>%
+  left_join(genet_map, by = "Genet")
+
+
+stemlength_effects_all <- all_sols[, grepl("^mean_StemLength\\.", colnames(all_sols))]
+
+# Compute posterior mean of each Genet effect across all samples
+stemlength_means <- colMeans(stemlength_effects_all)
+
+# Extract clean Genet names
+stemlength_names <- gsub("^mean_StemLength\\.", "", names(stemlength_means))
+stemlength_map <- data.frame(StemLength.cm = stemlength_names, stemlength_effect = stemlength_means)
+
+# Merge with your data
+phenotypic_data_growth$StemLength.cm<- as.factor(phenotypic_data_growth$StemLength.cm)
+phenotypic_data_growth <- phenotypic_data_growth %>%
+  left_join(stemlength_map, by = "StemLength.cm")
+
+
+# Adjust phenotype: observed - genet effect
+phenotypic_data_growth <- phenotypic_data_growth %>%
+  mutate(adjusted_growth = mean_AverageShootVolume - genet_effect - stemlength_effect)#
+
+pop_mean_adjusted_growth <- phenotypic_data_growth %>%
+  group_by(Population) %>%
+  summarise(mean_adjusted_growth = mean(adjusted_growth, na.rm = TRUE))
+
+save(pop_mean_adjusted_growth,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/Covariate_model/values/pop_mean_adjusted_growth.Rdata")
+```
+
+Reduce 
+
+```{r shootvolume model no blups, eval=FALSE, include=FALSE}
+set.seed(3)
+
+phenotypic_data_growth$Sex <- as.factor(phenotypic_data_growth$Sex)
+phenotypic_data_growth_wo_Na <- phenotypic_data_growth %>%group_by(Sex) %>% drop_na()
+
+#set the prior info for the fixed variables: year and the randoms ones: Population and Plant
+prior_ShootVol=list(R=list(V=1, nu=0.002),G=list((G1=list(V=1, nu=0.002)),(G2=list(V=1, nu=0.002))))
+
+#we can perform the model
+ShootVol_covariates_reduce<- mclapply(1:4, function(i) {#we can perform 4 MCMC 
+  ShootVol_covariates_reduce<-MCMCglmm(mean_AverageShootVolume~1,random=~ Genet +mean_StemLength,prior=prior_ShootVol, family="gaussian", nitt=1500000, burnin=50000, thin=500, data=phenotypic_data_growth_wo_Na, pr=TRUE, verbose=F) #the pheno is explain by the year as fixed because few number of parameters and by the Population and Plant factors, we are following a gaussian law due to the quantitative continuous type of the response variable (the pheno)
+}, mc.cores=1)
+
+#save the chains
+growth_model_covariates_reduce<- ShootVol_covariates_reduce
+save(growth_model_covariates_reduce,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/Covariate_model/growth_model_covariates_reduce.rda")
+```
+
+```{r load the MCMC growth no blups, eval=FALSE, include=FALSE}
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/Covariate_model/growth_model_covariates_reduce.rda")
+growth_model_covariates_reduce <- growth_model_covariates_reduce
+```
+
+```{r extract population values openstrob test, eval=FALSE, include=FALSE}
+all_sols <- do.call(rbind, lapply(ShootVol_covariates_reduce, function(model) model$Sol))
+
+# Extract Genet random effects
+genet_effects_all <- all_sols[, grepl("^Genet\\.", colnames(all_sols))]
+
+# Compute posterior mean of each Genet effect across all samples
+genet_means <- colMeans(genet_effects_all)
+
+# Extract clean Genet names
+genet_names <- gsub("^Genet\\.", "", names(genet_means))
+genet_map <- data.frame(Genet = genet_names, genet_effect = genet_means)
+
+phenotypic_data_growth_wo_Na <- phenotypic_data_growth_wo_Na %>%
+  left_join(genet_map, by = "Genet")
+
+
+stemlength_effects_all <- all_sols[, grepl("^mean_StemLength\\.", colnames(all_sols))]
+
+# Compute posterior mean of each Genet effect across all samples
+stemlength_means <- colMeans(stemlength_effects_all)
+
+# Extract clean Genet names
+stemlength_names <- gsub("^mean_StemLength\\.", "", names(stemlength_means))
+stemlength_map <- data.frame(StemLength.cm = stemlength_names, stemlength_effect = stemlength_means)
+
+# Merge with your data
+phenotypic_data_growth_wo_Na$StemLength.cm<- as.factor(phenotypic_data_growth_wo_Na$StemLength.cm)
+phenotypic_data_growth_wo_Na <- phenotypic_data_growth_wo_Na %>%
+  left_join(stemlength_map, by = "StemLength.cm")
+
+
+# Adjust phenotype: observed - genet effect
+phenotypic_data_growth_wo_Na <- phenotypic_data_growth_wo_Na %>%
+  mutate(adjusted_growth = mean_AverageShootVolume - genet_effect - stemlength_effect.y.y)#
+
+pop_mean_adjusted_growth_reduce <- phenotypic_data_growth_wo_Na %>%
+  group_by(Population) %>%
+  summarise(mean_adjusted_growth = mean(adjusted_growth, na.rm = TRUE))
+
+save(pop_mean_adjusted_growth_reduce,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/Covariate_model/values/pop_mean_adjusted_growth_reduce.Rdata")
+```
+
+Fixed effect 
+```{r shootvolume model no blups fixed, eval=FALSE, include=FALSE}
+set.seed(3)
+
+#phenotypic_data_growth$Sex <- as.factor(phenotypic_data_growth$Sex)
+#phenotypic_data_growth_wo_Na <- phenotypic_data_growth %>%group_by(Sex) %>% drop_na()
+
+#set the prior info for the fixed variables: year and the randoms ones: Population and Plant
+prior_ShootVol=list(R=list(V=1, nu=0.002),G=list((G1=list(V=1, nu=0.002))))
+
+#we can perform the model
+ShootVol_covariates_fixed<- mclapply(1:4, function(i) {#we can perform 4 MCMC 
+  ShootVol_covariates_fixed<-MCMCglmm(mean_AverageShootVolume~mean_StemLength,random=~ Genet,prior=prior_ShootVol, family="gaussian", nitt=1500000, burnin=50000, thin=500, data=phenotypic_data_growth, pr=TRUE, verbose=F) #the pheno is explain by the year as fixed because few number of parameters and by the Population and Plant factors, we are following a gaussian law due to the quantitative continuous type of the response variable (the pheno)
+}, mc.cores=1)
+
+#save the chains
+growth_model_covariates_fixed<- ShootVol_covariates_fixed
+save(growth_model_covariates_fixed,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/Covariate_model/growth_model_covariates_fixed.rda")
+```
+
+```{r load the MCMC growth no blups testbis, eval=FALSE, include=FALSE}
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/Covariate_model/growth_model_covariates_fixed.rda")
+growth_model_covariates_fixed <- growth_model_covariates_fixed
+```
+
+```{r extract population values openstrob test bis, eval=FALSE, include=FALSE}
+all_sols <- do.call(rbind, lapply(growth_model_covariates_fixed, function(model) model$Sol))
+
+# Extract Genet random effects
+genet_effects_all <- all_sols[, grepl("^Genet\\.", colnames(all_sols))]
+
+# Compute posterior mean of each Genet effect across all samples
+genet_means <- colMeans(genet_effects_all)
+
+# Extract clean Genet names
+genet_names <- gsub("^Genet\\.", "", names(genet_means))
+genet_map <- data.frame(Genet = genet_names, genet_effect = genet_means)
+
+phenotypic_data_growth <- phenotypic_data_growth %>%
+  left_join(genet_map, by = "Genet")
+
+
+stemlength_effect <- mean(all_sols[, "mean_StemLength"])
+# Adjust phenotype: observed - genet effect - fixed effect * stem length
+phenotypic_data_growth <- phenotypic_data_growth %>%
+  mutate(adjusted_growth = mean_AverageShootVolume - genet_effect - mean_StemLength * stemlength_effect)
+
+# Summarise per population
+pop_mean_adjusted_growth_fixed <- phenotypic_data_growth %>%
+  group_by(Population) %>%
+  summarise(mean_adjusted_growth = mean(adjusted_growth, na.rm = TRUE))
+
+save(pop_mean_adjusted_growth_fixed,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/Covariate_model/values/pop_mean_adjusted_growth_fixed.Rdata")
+```
+
+## Trait related to growth phenology
+
+### Spring elongation
+```{r springelong model no blups, eval=FALSE, include=FALSE}
+set.seed(3)
+#phenotypic_data_growth_pheno_wo_Na <- phenotypic_data_growth_pheno %>%group_by(Sex) %>% drop_na()
+#phenotypic_data_growth_pheno_wo_Na$Sex <- as.factor(phenotypic_data_growth_pheno_wo_Na$Sex)
+
+#set the prior info for the fixed variables: year and the randoms ones: Population and Plant
+prior_springelong=list(R=list(V=1, nu=0.002),G=list((G1=list(V=1, nu=0.002))))
+
+#we can perform the model
+
+springelong_model_covariates<- mclapply(1:4, function(i) {#we can perform 4 MCMC 
+  springelong_model_covariates<-MCMCglmm(mean_springelong~1,random=~ Genet,prior=prior_springelong, family="gaussian", nitt=1500000, burnin=50000, thin=500, data=phenotypic_data_growth_pheno, pr=TRUE, verbose=F) #the pheno is explain by the year as fixed because few number of parameters and by the Population and Plant factors, we are following a gaussian law due to the quantitative continuous type of the response variable (the pheno)
+}, mc.cores=1)
+
+#save the chains
+growth_pheno_model_covariates <- springelong_model_covariates
+save(growth_pheno_model_covariates,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/Covariate_model/growth_pheno_model_covariates.rda")
+```
+
+```{r load the MCMC growth pheno no blups, eval=FALSE, include=FALSE}
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/Covariate_model/growth_pheno_model_covariates.rda")
+growth_pheno_model_covariates <- growth_pheno_model_covariates
+```
+
+```{r extract population values openstrob test bis bis, eval=FALSE, include=FALSE}
+all_sols <- do.call(rbind, lapply(growth_pheno_model_covariates, function(model) model$Sol))
+
+# Extract Genet random effects
+genet_effects_all <- all_sols[, grepl("^Genet\\.", colnames(all_sols))]
+
+# Compute posterior mean of each Genet effect across all samples
+genet_means <- colMeans(genet_effects_all)
+
+# Extract clean Genet names
+genet_names <- gsub("^Genet\\.", "", names(genet_means))
+genet_map <- data.frame(Genet = genet_names, genet_effect = genet_means)
+
+# Merge with your data
+library(dplyr)
+phenotypic_data_growth_pheno <- phenotypic_data_growth_pheno %>%
+  left_join(genet_map, by = "Genet")
+
+# Adjust phenotype: observed - genet effect
+phenotypic_data_growth_pheno <- phenotypic_data_growth_pheno %>%
+  mutate(adjusted_growthpheno = mean_springelong - genet_effect)
+
+pop_mean_adjusted_growthpheno <- phenotypic_data_growth_pheno %>%
+  group_by(Population) %>%
+  summarise(mean_adjusted_growthpheno = mean(adjusted_growthpheno, na.rm = TRUE))
+
+save(pop_mean_adjusted_growthpheno,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/Covariate_model/values/pop_mean_adjusted_growthpheno.Rdata")
+```
+
+
+
+## Trait related to reproductive phenology
+
+### Proportion open strobili
+```{r mature Strobili model no blups, eval=FALSE, include=FALSE}
+set.seed(3)
+#set the prior info for the fixed variables: year and the randoms ones: Population and Plant
+prior_openstrob=list(R=list(V=1, nu=0.002),G=list((G1=list(V=1, nu=0.002))))
+
+#we can perform the model
+
+openstrob_model_covariates<- mclapply(1:4, function(i) {#we can perform 4 MCMC 
+  openstrob_model_covariates<-MCMCglmm(mean_proportion_open~1,random=~ Genet,prior=prior_openstrob, family="gaussian", nitt=1500000, burnin=50000, thin=500, data=phenotypic_data_repro_pheno, pr=TRUE, verbose=F) #the pheno is explain by the year as fixed because few number of parameters and by the Population and Plant factors, we are following a poisson law due to the count type of the response variable (the pheno)
+}, mc.cores=1)
+
+#save the chains
+openstrob_model_covariates<- openstrob_model_covariates
+save(openstrob_model_covariates,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/Covariate_model/openstrob_model_covariates.rda")
+```
+
+```{r load the MCMC open strob no blups, eval=FALSE, include=FALSE}
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/Covariate_model/openstrob_model_covariates.rda")
+openstrob_model_covariates <- openstrob_model_covariates
+```
+
+```{r extract population values openstrob, eval=FALSE, include=FALSE}
+all_sols <- do.call(rbind, lapply(openstrob_model_covariates, function(model) model$Sol))
+
+# Extract Genet random effects
+genet_effects_all <- all_sols[, grepl("^Genet\\.", colnames(all_sols))]
+
+# Compute posterior mean of each Genet effect across all samples
+genet_means <- colMeans(genet_effects_all)
+
+# Extract clean Genet names
+genet_names <- gsub("^Genet\\.", "", names(genet_means))
+genet_map <- data.frame(Genet = genet_names, genet_effect = genet_means)
+
+# Merge with your data
+library(dplyr)
+phenotypic_data_repro_pheno <- phenotypic_data_repro_pheno %>%
+  left_join(genet_map, by = "Genet")
+
+# Adjust phenotype: observed - genet effect
+phenotypic_data_repro_pheno <- phenotypic_data_repro_pheno %>%
+  mutate(adjusted_pheno = mean_proportion_open - genet_effect)
+
+pop_mean_adjusted_repropheno <- phenotypic_data_repro_pheno %>%
+  group_by(Population) %>%
+  summarise(mean_adjusted_pheno = mean(adjusted_pheno, na.rm = TRUE))
+
+save(pop_mean_adjusted_repropheno,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/Covariate_model/values/pop_mean_adjusted_repropheno.Rdata")
+```
+
+
+## Water statues 
+
+### Leaf thickness
+```{r Leaf thickness model no blups, eval=FALSE, include=FALSE}
+set.seed(3)
+#set the prior info for the fixed variables: year and the randoms ones: Population and Plant
+prior_leaftraits=list(R=list(V=1, nu=0.002),G=list((G1=list(V=1, nu=0.002))))
+
+#phenotypic_data_leaftraits$Sex<-as.factor(phenotypic_data_leaftraits$Sex)
+#we can perform the model
+leafthickness_model_covariates<- mclapply(1:4, function(i) {#we can perform 4 MCMC 
+  leafthickness_model_covariates<-MCMCglmm(mean_leafthickness~1,random=~ Genet,prior=prior_leaftraits, family="gaussian", nitt=1500000, burnin=50000, thin=500, data=phenotypic_data_leaftraits, pr=TRUE, verbose=F) #the pheno is explain by the year as fixed because few number of parameters and by the Population and Plant factors, we are following a poisson law due to the count type of the response variable (the pheno)
+}, mc.cores=1)
+
+#save the chains
+leafthickness_model_covariates<- leafthickness_model_covariates
+save(leafthickness_model_covariates,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/Covariate_model/leafthickness_model_covariates.rda")
+```
+
+```{r extract population values openstrob test bis bis , eval=FALSE, include=FALSE}
+all_sols <- do.call(rbind, lapply(leafthickness_model_covariates, function(model) model$Sol))
+
+# Extract Genet random effects
+genet_effects_all <- all_sols[, grepl("^Genet\\.", colnames(all_sols))]
+
+# Compute posterior mean of each Genet effect across all samples
+genet_means <- colMeans(genet_effects_all)
+
+# Extract clean Genet names
+genet_names <- gsub("^Genet\\.", "", names(genet_means))
+genet_map <- data.frame(Genet = genet_names, genet_effect = genet_means)
+
+# Merge with your data
+library(dplyr)
+phenotypic_data_leaftraits <- phenotypic_data_leaftraits %>%
+  left_join(genet_map, by = "Genet")
+
+# Adjust phenotype: observed - genet effect
+phenotypic_data_leaftraits <- phenotypic_data_leaftraits %>%
+  mutate(adjusted_leafthick = mean_leafthickness - genet_effect)
+
+pop_mean_adjusted_leafthick <- phenotypic_data_leaftraits %>%
+  group_by(Population) %>%
+  summarise(mean_adjusted_leafthick = mean(adjusted_leafthick, na.rm = TRUE))
+
+save(pop_mean_adjusted_leafthick,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/Covariate_model/values/pop_mean_adjusted_leafthick.Rdata")
+```
+
+
+```{r load the MCMC leafthickness no blups, eval=FALSE, include=FALSE}
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/phenotypic_data/Covariate_model/leafthickness_model_covariates.rda")
+leafthickness_model_covariates <-leafthickness_model_covariates
+```
+
 
 Traits: 
 

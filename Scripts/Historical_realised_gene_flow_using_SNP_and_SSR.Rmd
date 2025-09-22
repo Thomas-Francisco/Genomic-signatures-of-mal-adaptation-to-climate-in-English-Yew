@@ -1,0 +1,2074 @@
+---
+title: "Historical_realised_gene_flow_using_SNP_and_SSR"
+author: "Thomas Francisco & Elia Vajana"
+date: "2024-12-16"
+output: html_document
+---
+
+```{r library}
+rm(list = ls())
+library(ggplot2)
+library(rnaturalearth)
+library(rEEMSplots)
+library(rgdal)
+library(rworldmap)
+library(rworldxtra)
+library(RColorBrewer)
+library(sp)
+library(raster)
+library(sf)
+library(dplyr)
+library(rgdal)
+library(writexl)
+library(scales) 
+```
+
+
+This script aims to analyse migration and connectivity across populations of Taxus baccata. The dataset comprises 4,993 trees from 246 populations genotyped at 7 SSR loci. Because some populations include very few sampled trees, caution is required when interpreting results. To address this, we used both the full dataset and a reduced dataset including only populations with at least 10 individuals, allowing us to compare results and assess consistency in the inferred patterns.
+
+Historical effective gene flow across the European distribution range of English yew was estimated using the Estimated Effective Migration Surfaces software (EEMS; Petkova et al., 2016). The aim of this analysis was to identify regions where the relationship between genetic and geographic distances deviates from an isolation-by-distance (IBD) model. For example, regions where genetic dissimilarity decays faster than expected under IBD may indicate barriers to gene flow (Petkova et al., 2016).
+
+We applied EEMS to the published dataset of seven nuclear microsatellites (nuSSRs) covering the distribution range of T. baccata (Mayol et al., 2015), which includes 4,993 trees from 238 published sites, plus 5 additional sites from Bulgaria, Czech Republic, France, Iran, and Russia. To account for variation in sample sizes across sites, analyses were performed both on the full dataset and on the reduced dataset with ≥10 trees per site (4,658 trees from 176 locations).
+
+We tested different deme configurations (100, 400, and 1000 demes), as recommended by Petkova et al. (2016). For each dataset and deme setting, EEMS was run independently three times, with 2,000,000 iterations, a burn-in of 1,000,000, and a thinning interval of 9,999. Default parameters were used except for four adjusted values, modified following Elia Vajana to ensure acceptance rates remained within the recommended range (EEMS documentation):  
+mEffctProposalS2 = 1  
+mSeedsProposalS2 = 1  
+qEffctProposalS2 = 0.01  
+qSeedsProposalS2 = 0.3  
+
+For each run, the R² value of the relationship between observed and fitted dissimilarities was calculated to assess model fit.
+
+Analyses were performed by Elia Vajana and Thomas Francisco.
+
+# Data visualisation
+
+Data come from Mayol et al. (2015): 238 populations plus 5 additional populations, for a total of 4,993 trees genotyped at seven nuclear microsatellites (nuSSRs).
+
+```{r data}
+data <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/Data_SSR_Taxus.csv",h=T,sep=";",dec=",")
+
+meta_data <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/Meta_data_pop_taxus_migration.csv",h=T,sep=";",dec=",")
+
+merge_data <- merge(meta_data,data,"Number_pop")
+```
+## Subset of the data
+
+To account for variability in the number of trees sampled per location, analyses were performed on all populations described above and on a reduced set of populations. To select the subset, we visualised several datasets with different thresholds: no threshold, at least 10 trees per population, and at least 20 trees per population.
+
+We also investigated the number of sampled trees per population.
+```{r sampled tree per dataset}
+#all populations
+df <- data.frame(table(merge_data$Population))
+colnames(df) <- c("Population","N_pop")
+df_allpop <- merge(meta_data,df,"Population")
+
+merge_SSR_allpop <- merge(df_allpop,merge_data,"Population")
+#242 pop
+
+#At least 10 trees per populations
+df_10 <- df[df$N_pop > 10, ]
+colnames(df_10) <- c("Population","N_pop")
+df_10N <- merge(meta_data,df_10,"Population")
+#176 pop
+
+#At least 20 trees per populations
+df_20 <- df[df$N_pop > 20, ]
+colnames(df_20) <- c("Population","N_pop")
+df_20N <- merge(meta_data,df_20,"Population")
+#120 pop
+```
+
+Geographic distribution of populations
+
+```{r map all pop}
+admin <- ne_countries(scale = "medium", returnclass = "sf")
+list_dataset <- c("df_allpop","df_10N","df_20N")
+list_name <- c("all pop","10 N treshold","20 N threshold")
+
+for(x in 1:length(list_dataset)){
+  
+  dataset <- get(list_dataset[x])
+  name <- list_name[x]
+  
+  plot <- ggplot(data = dataset) + 
+  geom_sf(data = admin, fill = gray(0.92), size = 0) +
+  geom_point(aes(x = LONG, y = LAT), shape = 21,size=3,fill="red", color = "black") +
+  geom_sf(data = admin, fill = NA, size = 0.1) +
+  coord_sf(xlim = c(-15, 57), ylim = c(30, 62), expand = FALSE) +
+  xlab("Longitude") + ylab("Latitude")+
+  ggtitle(paste0("Sampled location distribution for ",name))
+print(plot) 
+
+pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/map_",name,"_repartition.pdf"));print(plot);dev.off()}
+```
+
+We are going to test the model with all populations, as EEMS does not appear to be highly sensitive to asymmetrical sampling designs. We will also run the model with populations containing at least 10 individuals and compare the quality of the models.
+
+We can save the files in the format required by EEMS: one file with two columns (longitude and latitude) and another file with the microsatellite information (two columns per SSR, with individuals in rows).
+```{r coordinates}
+#Retained indv
+merge_SSR_10pop <- merge(df_10N,merge_data,"Population")
+
+#Coord file
+coord_df <- data.frame(LONG=merge_SSR_10pop$LONG.x,LAT=merge_SSR_10pop$LAT.y)
+write.csv(coord_df,file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/coord_df.csv")
+
+#Site
+microsat_df <- data.frame(merge_SSR_10pop[,c(10:23)])
+write.csv(microsat_df,file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/Taxus_10pop.csv")
+```
+
+# Reduce extent
+
+We are reducing the extent to the European distribution.
+```{r reduce extent}
+data_poly <- read.table("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/polyg.txt",h=T)
+data_poly$Longitude<- as.numeric(data_poly$Longitude);data_poly$Latitude<- as.numeric(data_poly$Latitude)
+
+data_poly_m <- as.matrix(data_poly)
+polygon <- st_polygon(list(data_poly_m))
+
+#Convert to an sf object
+polygon_sf <- st_sfc(polygon, crs = 4326) #Using WGS 84 (EPSG:4326)
+
+#Plot the polygon
+plot(polygon_sf, col = "lightblue", border = "blue", main = "Polygon Visualization")
+
+#Print polygon details
+polygon_sf
+
+library(sf)
+admin <- ne_countries(scale = "medium", returnclass = "sf")
+
+
+#Create the plot
+plot <- ggplot() + 
+  geom_sf(data = polygon_sf, fill = "lightblue", color = "blue", size = 0.5) +  #Add the polygon
+  geom_sf(data = admin, fill = gray(0.92), size = 0) +
+  geom_sf(data = admin, fill = NA, size = 0.1) +
+  coord_sf(xlim = c(-15, 32), ylim = c(30, 62), expand = FALSE) +
+  
+  theme_minimal() 
+
+#Print the plot
+print(plot)
+```
+
+
+## We need to keep only individuals within this range
+
+## 10 trees per pop threshold
+
+```{r 10pop}
+colnames(coord_df) <- c("LONG.x","LAT.x")
+#Convert the points to an sf object (make sure they have Longitude and Latitude)
+points_sf <- st_as_sf(coord_df, coords = c("LONG.x", "LAT.x"), crs = 4326)
+
+#Check if the points are within the polygon
+points_within_polygon <- st_intersects(points_sf, polygon_sf, sparse = FALSE)
+
+#Filter the points that are inside the polygon
+points_inside_polygon <- coord_df[points_within_polygon, ]
+
+#View the filtered data
+head(points_inside_polygon)
+
+merge_SSR_10pop_reduce <- merge_SSR_10pop[,c(1:5,10:23)]
+
+points_inside_polygon <- points_inside_polygon %>%
+  mutate(coord = paste(LONG.x, LAT.x, sep = "_"))
+
+merge_SSR_10pop_reduce <- merge_SSR_10pop_reduce %>%
+  mutate(coord = paste(LONG.x, LAT.x, sep = "_"))
+
+points_inside_polygon_pop <- merge(points_inside_polygon,merge_SSR_10pop_reduce[,c(1,20)],"coord") %>% unique()
+
+#SSR data
+df_ssr_data_reduce <- merge(points_inside_polygon_pop,merge_SSR_10pop_reduce, "Population")
+```
+
+```{r save new reduce data 10pop}
+#Coord
+write.csv(df_ssr_data_reduce[,c(3,4)],file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/coord_df_reduce.csv")
+
+#Site
+microsat_df_reduce <- data.frame(df_ssr_data_reduce[,c(9:22)])
+write.csv(microsat_df_reduce,file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/microsat_df_reduce.csv")
+```
+
+## all pop
+
+```{r all pop }
+coord_df_allpop <- merge_SSR_allpop[,c(3,4)]
+
+colnames(coord_df_allpop) <- c("LONG.x","LAT.x")
+#Convert the points to an sf object (make sure they have Longitude and Latitude)
+points_sf <- st_as_sf(coord_df_allpop, coords = c("LONG.x", "LAT.x"), crs = 4326)
+
+#Check if the points are within the polygon
+points_within_polygon <- st_intersects(points_sf, polygon_sf, sparse = FALSE)
+
+#Filter the points that are inside the polygon
+points_inside_polygon <- coord_df_allpop[points_within_polygon, ]
+
+#View the filtered data
+head(points_inside_polygon)
+
+merge_SSR_allpop_reduce <- merge_SSR_allpop[,c(1:5,10:23)]
+
+points_inside_polygon <- points_inside_polygon %>%
+  mutate(coord = paste(LONG.x, LAT.x, sep = "_"))
+
+merge_SSR_allpop_reduce <- merge_SSR_allpop_reduce %>%
+  mutate(coord = paste(LONG.x, LAT.x, sep = "_"))
+
+
+points_inside_polygon_pop <- merge(points_inside_polygon,merge_SSR_allpop_reduce[,c(1,20)],"coord") %>% unique()
+
+#SSR data
+df_ssr_data_reduce_allpop <- merge(merge_SSR_allpop_reduce, points_inside_polygon_pop, "Population")
+```
+
+```{r save new reduce data all pop}
+#Coord
+write.csv(points_inside_polygon[,c(1,2)],file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/coord_df_reduce_allpop.csv")
+
+#Site
+microsat_df_reduce <- data.frame(df_ssr_data_reduce_allpop[,c(6:19)])
+write.csv(microsat_df_reduce,file="C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/microsat_df_reduce_allpop.csv")
+```
+
+# Plot EEMS results
+
+First, we need to load the coordinates of the 29 populations used for genomic analyses, as we want to plot their positions on the EEMS map. 
+
+```{r genomic analyses populations}
+meta_data_pop <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Populations/taxus_sample_29pop.csv",h=T,sep=";",dec=",")
+
+#Alphabetic order
+meta_data_pop_order <- meta_data_pop[order(meta_data_pop$Population),]
+meta_data_pop_order$Latitude <- as.numeric(meta_data_pop_order$Latitude);meta_data_pop_order$Longitude <- as.numeric(meta_data_pop_order$Longitude)
+
+
+load("C:/Users/tfrancisco/Documents/Thesis/Results/all_species/FST_index/Bayescan_PSD_Taxus.Rdata")
+
+#Map projection 
+projection_none <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0" #Input 
+projection_mercator <- "+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs" #Output mercator
+projection_lambert <- "+proj=lcc +lat_1=20 +lat_2=70 +lon_0=10 + lon_1=60" #Output Lambert conformal
+
+#Transform the population coordinates to match the Mercator projection
+coordinates(meta_data_pop_order) <- ~Longitude + Latitude
+sp::proj4string(meta_data_pop_order) <- CRS(projection_none)  #Set input projection
+meta_data_pop_order_mercator <- spTransform(meta_data_pop_order, CRS(projection_mercator))
+
+meta_data_pop_order_f <- merge(meta_data_pop_order, Bayescan_PSD_Taxus, "Population")
+#Population specific divergence index (~Fst)
+
+#Convert your sp object to sf
+sf_data <- st_as_sf(meta_data_pop_order_f)
+
+#Reproject using sf (preserves order and alignment)
+meta_data_pop_order_mercator <- st_transform(sf_data, crs = projection_mercator)
+
+#Transform to Mercator projection
+meta_data_pop_order_mercator <- spTransform(meta_data_pop_order_f, CRS(projection_mercator))
+
+meta_data_pop_order_mercator$size_scaled <- scales::rescale(meta_data_pop_order_mercator$Fst, to = c(0.5, 2))
+
+meta_data_pop_order_mercator
+
+```
+
+```{r add Fst on map}
+meta_data_pop_order_mercator$Fst <- as.numeric(meta_data_pop_order_mercator$Fst)
+
+#Define min and max point sizes
+min_size <- 1.5  #Size for Fst = 0
+max_size <- 3    #Size for Fst = 0.7
+
+#Rescale Fst values to the defined size range
+meta_data_pop_order_mercator$size_scaled <- scales::rescale(
+  meta_data_pop_order_mercator$Fst, 
+  to = c(min_size, max_size)
+)
+
+#Check scaling
+summary(meta_data_pop_order_mercator$size_scaled)
+
+#Extend of the value 
+min_Fst <- min(meta_data_pop_order_mercator$Fst, na.rm = TRUE)
+max_Fst <- max(meta_data_pop_order_mercator$Fst, na.rm = TRUE)
+
+min_Fst <- min(meta_data_pop_order_mercator$Fst, na.rm = TRUE)
+max_Fst <- max(meta_data_pop_order_mercator$Fst, na.rm = TRUE)
+
+min_size <- 1.5  #Size for Fst = 0
+max_size <- 3 
+```
+
+```{r plot Fst on map}
+merge_test <- merge(meta_data_pop,Bayescan_PSD_Taxus,"Population")
+merge_test$Latitude <- as.numeric(merge_test$Latitude);merge_test$Longitude <- as.numeric(merge_test$Longitude)
+
+library(ggplot2)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(ggspatial)
+
+#Load base map
+admin <- ne_countries(scale = "medium", returnclass = "sf")
+
+
+#df: Population | Longitude | Latitude | Fst
+
+plot <- ggplot() + 
+  geom_sf(data = admin, fill = gray(0.92), size = 0.1) +
+  
+  #Plot points with size mapped to Fst
+  geom_point(data = merge_test, aes(x = Longitude, y = Latitude, size = Fst),
+             shape = 21, fill = "darkred", color = "black", stroke = 0.3) +
+  
+  scale_size_continuous(
+    range = c(2, 8),  #Customize min and max point size
+    name = "Fst value"
+  ) +
+  coord_sf(xlim = c(-10, 30), ylim = c(35, 62), expand = FALSE) +
+  xlab("Longitude") + ylab("Latitude") +
+  ggtitle("Population Fst Values on Map") +
+  
+  annotation_scale(location = "br", width_hint = 0.3) +
+  annotation_north_arrow(location = "tl", which_north = "true",
+                         pad_x = unit(-0.2, "cm"), pad_y = unit(0.08, "cm"),
+                         style = north_arrow_fancy_orienteering) +
+  
+  theme_bw(base_size = 11) +
+  theme(
+    legend.position = "right",
+    panel.grid = element_blank(),
+    plot.title = element_text(hjust = 0.5, face = "italic")
+  )
+
+print(plot)
+
+
+min_size <- 1.5  #Size for Fst = 0
+max_size <- 3    #Size for Fst = 0.7 (or the actual max Fst in your data)
+
+#Rescale Fst values to the defined size range
+merge_test$size_scaled <- scales::rescale(
+  merge_test$Fst, 
+  to = c(min_size, max_size)
+)
+
+plot <- ggplot() + 
+  geom_sf(data = admin, fill = gray(0.92), size = 0.1) +
+  
+  #Plot points with size mapped to Fst
+  geom_point(data = merge_test, aes(x = Longitude, y = Latitude, size = size_scaled),
+             shape = 21, fill = "darkred", color = "black", stroke = 0.3) +
+  
+  scale_size_continuous(
+    range = c(2, 8),  #Customize min and max point size
+    name = "Fst value"
+  ) +
+  
+  coord_sf(xlim = c(-10, 30), ylim = c(35, 62), expand = FALSE) +
+  xlab("Longitude") + ylab("Latitude") +
+  ggtitle("Population Fst Values on Map") +
+  
+  annotation_scale(location = "br", width_hint = 0.3) +
+  annotation_north_arrow(location = "tl", which_north = "true",
+                         pad_x = unit(-0.2, "cm"), pad_y = unit(0.08, "cm"),
+                         style = north_arrow_fancy_orienteering) +
+  
+  theme_bw(base_size = 11) +
+  theme(
+    legend.position = "right",
+    panel.grid = element_blank(),
+    plot.title = element_text(hjust = 0.5, face = "italic")
+  )
+
+print(plot)
+```
+
+Add Fst info on the size of the black dots of population
+
+Correlation Fst hierfstat with bayescan
+
+```{r Correlation Fst Hierfstat with Bayescan}
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Gene_flow/Population_Structure/results/overall_fst_Taxus_hierfstat.Rdata")
+
+Fst_hierfstat <- data.frame(overall_fst_Taxus_hierfstat$betaiovl)
+Fst_hierfstat$overall_fst_Taxus_hierfstat.betaiovl<- as.numeric(Fst_hierfstat$overall_fst_Taxus_hierfstat.betaiovl)
+
+load("C:/Users/tfrancisco/Documents/Thesis/Results/all_species/FST_index/Bayescan_PSD_Taxus.Rdata")
+
+identical(row.names(Fst_hierfstat),Bayescan_PSD_Taxus$Population)
+
+identical(genind_Taxus_filtered$pop,popmap_order_taxus$POP_ID)
+
+cor(Bayescan_PSD_Taxus$Fst,Fst_hierfstat$overall_fst_Taxus_hierfstat.betaiovl)
+```
+
+## 10 trees per pop threshold
+
+### Full extent
+
+We conducted these analyses on Linus using the full extent of the populations (Europe, Asia Minor, and the Atlas Mountains). Additionally, we tested different numbers of predicted demes in the model: 100, 400, and 1,000, as recommended by Petkova et al. (2016). For both population datasets and each deme configuration, EEMS was run independently three times with 2,000,000 iterations, a burn-in period of 1,000,000, and a thinning interval of 9,999. Default parameters were used, except for four that were adjusted to ensure the acceptance rates of the models remained within the recommended range (EEMS documentation: mEffctProposalS2 = 1; mSeedsProposalS2 = 1; qEffctProposalS2 = 0.01 and qSeedsProposalS2 = 0.3)
+
+#### 100
+
+```{r 100 elia s parameters}
+for(x in 1:3){
+  
+  resFolder <- paste0("Taxus_10pop_100_chain",x,"_new")
+#Name of the folder where EEMS results
+setwd("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Pop10_indiv/100/")
+setwd(paste0("./", resFolder))
+as.data.frame(list.files())
+
+#Setting proper path to eems_results
+eems_results <- "./"
+if (!file.exists(eems_results)) stop("Check that the rEEMSplots package is installed without errors.")
+#name_figures <- "Taxus-all-1000demes-default"
+
+#Map projection 
+projection_none <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0" #Input 
+projection_mercator <- "+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs" #Output mercator
+projection_lambert <- "+proj=lcc +lat_1=20 +lat_2=70 +lon_0=10 + lon_1=60" #Output Lambert conformal
+  
+#Getting a zoomed map on the Taxus distribution
+
+coast <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/ne_10m_coastline.shp")
+Taxus_shp <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/Taxus_baccata_plg_clip.shp")
+coast <- raster::crop(x = coast, y = Taxus_shp)
+coast_mercator <- spTransform(coast, CRSobj = CRS(projection_mercator))
+coast_lambert <- spTransform(coast, CRSobj = CRS(projection_lambert))
+
+#Plotting
+eems.plots(
+  #Paths to EEMS results 
+  mcmcpath = eems_results,
+  
+  #Label for the figures
+  plotpath = resFolder,
+  
+  #Does the longitude column precede the latitude column in the .coord file? 
+  longlat = TRUE,
+  
+  #Plot type (PDF or PNG) and size 
+  out.png = FALSE, # out.png = TRUE, res = 600, 
+  plot.height = 8, plot.width = 9,
+  #Grid
+  #add.grid = TRUE, lwd.grid = 1, col.grid = "gray80", #gray80
+  #Outline
+  add.outline = TRUE,  col.outline = "gray80", lwd.outline = 3,
+  
+  #Demes
+  add.demes = TRUE, col.demes = "black", 
+  pch.demes = 1, min.cex.demes = .5, max.cex.demes = 1.5,
+  
+  #Geographic projections
+  projection.in = projection_none,
+  projection.out = projection_mercator,
+  #Map
+  # add.map = FALSE, # TRUE 
+  # col.map = "gray30",
+  # lwd.map = 0.3,
+  # eems.colors = brewer.pal(11, "Spectral"),
+  
+  #Plotting Europe and North Africa
+ m.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    #Add population points here
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.9, col = "white") 
+  },
+  q.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    #Add population points here as well
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.9, col = "white") 
+  },
+  
+  #Others
+  add.r.squared = TRUE,
+  add.title = TRUE,
+  prob.level = 0.8,
+  add.abline = TRUE
+  )
+}
+```
+
+#### 400
+
+```{r 400 elia s parameters}
+for(x in 1:3){
+  
+  resFolder <- paste0("Taxus_10pop_400_chain",x,"_new")
+# Name of the folder where EEMS results are stored (mcmcpath)
+setwd("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Pop10_indiv/400/")
+setwd(paste0("./", resFolder))
+as.data.frame(list.files())
+
+# Setting proper path to eems_results
+eems_results <- "./"
+if (!file.exists(eems_results)) stop("Check that the rEEMSplots package is installed without errors.")
+# name_figures <- "Taxus-all-1000demes-default"
+
+# Map projection 
+projection_none <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0" # input 
+projection_mercator <- "+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs" # output mercator
+projection_lambert <- "+proj=lcc +lat_1=20 +lat_2=70 +lon_0=10 + lon_1=60" # output Lambert conformal
+  
+# Getting a zoomed map on the Taxus distribution
+
+coast <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/ne_10m_coastline.shp")
+Taxus_shp <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/Taxus_baccata_plg_clip.shp")
+coast <- raster::crop(x = coast, y = Taxus_shp)
+coast_mercator <- spTransform(coast, CRSobj = CRS(projection_mercator))
+coast_lambert <- spTransform(coast, CRSobj = CRS(projection_lambert))
+
+# Plotting...
+eems.plots(
+  # paths to EEMS results 
+  mcmcpath = eems_results,
+  
+  # label for the figures
+  plotpath = resFolder,
+  
+  # Does the longitude column precede the latitude column in the .coord file? 
+  longlat = TRUE,
+  
+  # plot type (PDF or PNG) and size 
+  out.png = FALSE, # out.png = TRUE, res = 600, 
+  plot.height = 8, plot.width = 9,
+  # grid
+  #add.grid = TRUE, lwd.grid = 1, col.grid = "gray80", #gray80
+  # outline
+  add.outline = TRUE,  col.outline = "gray80", lwd.outline = 3,
+  
+  # demes
+  add.demes = TRUE, col.demes = "black", 
+  pch.demes = 1, min.cex.demes = .5, max.cex.demes = 1.5,
+  
+  # geographic projections
+  projection.in = projection_none,
+  projection.out = projection_mercator,
+  # map
+  # add.map = FALSE, # TRUE 
+  # col.map = "gray30",
+  # lwd.map = 0.3,
+  # eems.colors = brewer.pal(11, "Spectral"),
+  
+  # plotting Europe and North Africa
+ m.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.9, col = "white") 
+  },
+  q.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here as well
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.9, col = "white") 
+  },
+  
+  # others
+  add.r.squared = TRUE,
+  add.title = TRUE,
+  prob.level = 0.8,
+  add.abline = TRUE
+  )
+}
+```
+
+#### 1000
+
+```{r 1000 elia s parameters}
+for(x in 1:3){
+  
+  resFolder <- paste0("Taxus_10pop_1000_chain",x,"_new")
+# Name of the folder where EEMS results are stored (mcmcpath)
+setwd("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Pop10_indiv/1000/")
+setwd(paste0("./", resFolder))
+as.data.frame(list.files())
+
+# Setting proper path to eems_results
+eems_results <- "./"
+if (!file.exists(eems_results)) stop("Check that the rEEMSplots package is installed without errors.")
+# name_figures <- "Taxus-all-1000demes-default"
+
+# Map projection 
+projection_none <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0" # input 
+projection_mercator <- "+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs" # output mercator
+projection_lambert <- "+proj=lcc +lat_1=20 +lat_2=70 +lon_0=10 + lon_1=60" # output Lambert conformal
+  
+# Getting a zoomed map on the Taxus distribution
+
+coast <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/ne_10m_coastline.shp")
+Taxus_shp <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/Taxus_baccata_plg_clip.shp")
+coast <- raster::crop(x = coast, y = Taxus_shp)
+coast_mercator <- spTransform(coast, CRSobj = CRS(projection_mercator))
+coast_lambert <- spTransform(coast, CRSobj = CRS(projection_lambert))
+
+# Plotting...
+eems.plots(
+  # paths to EEMS results 
+  mcmcpath = eems_results,
+  
+  # label for the figures
+  plotpath = resFolder,
+  
+  # Does the longitude column precede the latitude column in the .coord file? 
+  longlat = TRUE,
+  
+  # plot type (PDF or PNG) and size 
+  out.png = FALSE, # out.png = TRUE, res = 600, 
+  plot.height = 8, plot.width = 9,
+  # grid
+  #add.grid = TRUE, lwd.grid = 1, col.grid = "gray80", #gray80
+  # outline
+  add.outline = TRUE,  col.outline = "gray80", lwd.outline = 3,
+  
+  # demes
+  add.demes = TRUE, col.demes = "black", 
+  pch.demes = 1, min.cex.demes = .5, max.cex.demes = 1.5,
+  
+  # geographic projections
+  projection.in = projection_none,
+  projection.out = projection_mercator,
+  # map
+  # add.map = FALSE, # TRUE 
+  # col.map = "gray30",
+  # lwd.map = 0.3,
+  # eems.colors = brewer.pal(11, "Spectral"),
+  
+  # plotting Europe and North Africa
+ m.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.9, col = "white") 
+  },
+  q.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here as well
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.9, col = "white") 
+  },
+  
+  # others
+  add.r.squared = TRUE,
+  add.title = TRUE,
+  prob.level = 0.8,
+  add.abline = TRUE
+  )
+}
+```
+
+
+
+```{r New parameters}
+for(x in 1:3){
+  
+  resFolder <- paste0("Taxus_10pop_1000_chain",x,"_new")
+# Name of the folder where EEMS results are stored (mcmcpath)
+setwd("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Pop10_indiv/1000/")
+setwd(paste0("./", resFolder))
+as.data.frame(list.files())
+
+# Setting proper path to eems_results
+eems_results <- "./"
+if (!file.exists(eems_results)) stop("Check that the rEEMSplots package is installed without errors.")
+# name_figures <- "Taxus-all-1000demes-default"
+
+# Map projection 
+projection_none <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0" # input 
+projection_mercator <- "+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs" # output mercator
+projection_lambert <- "+proj=lcc +lat_1=20 +lat_2=70 +lon_0=10 + lon_1=60" # output Lambert conformal
+  
+# Getting a zoomed map on the Taxus distribution
+
+coast <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/ne_10m_coastline.shp")
+Taxus_shp <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/Taxus_baccata_plg_clip.shp")
+coast <- raster::crop(x = coast, y = Taxus_shp)
+coast_mercator <- spTransform(coast, CRSobj = CRS(projection_mercator))
+coast_lambert <- spTransform(coast, CRSobj = CRS(projection_lambert))
+
+# Plotting...
+eems.plots(
+  # paths to EEMS results 
+  mcmcpath = eems_results,
+  
+  # label for the figures
+  plotpath = resFolder,
+  
+  # Does the longitude column precede the latitude column in the .coord file? 
+  longlat = TRUE,
+  
+  # plot type (PDF or PNG) and size 
+  out.png = FALSE, # out.png = TRUE, res = 600, 
+  plot.height = 8, plot.width = 9,
+  # grid
+  #add.grid = TRUE, lwd.grid = 1, col.grid = "gray80", #gray80
+  # outline
+  add.outline = TRUE,  col.outline = "gray80", lwd.outline = 3,
+  
+  # demes
+  add.demes = TRUE, col.demes = "black", 
+  pch.demes = 1, min.cex.demes = .5, max.cex.demes = 1.5,
+  
+  # geographic projections
+  projection.in = projection_none,
+  projection.out = projection_mercator,
+  # map
+  # add.map = FALSE, # TRUE 
+  # col.map = "gray30",
+  # lwd.map = 0.3,
+  # eems.colors = brewer.pal(11, "Spectral"),
+  
+  # plotting Europe and North Africa
+ m.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+points(meta_data_pop_order_mercator, pch = 21, bg = "black", 
+       cex = meta_data_pop_order_mercator$size_scaled, col = "white")
+legend("bottomright", 
+             legend = c(round(min_Fst, 2), round(max_Fst, 2)), 
+             pch = 21, pt.bg = "black", col = "white", 
+             pt.cex = c(min_size, max_size),  # Corrected point sizes
+             title = expression(F[ST]~"Index"), 
+             bty = "n")  
+  },
+  q.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+points(meta_data_pop_order_mercator, pch = 21, bg = "black", 
+       cex = meta_data_pop_order_mercator$size_scaled, col = "white")
+legend("bottomright", 
+             legend = c(round(min_Fst, 2), round(max_Fst, 2)), 
+             pch = 21, pt.bg = "black", col = "white", 
+             pt.cex = c(min_size, max_size),  # Corrected point sizes
+             title = expression(F[ST]~"index"), 
+             bty = "n") 
+  },
+  
+  # others
+  add.r.squared = TRUE,
+  add.title = TRUE,
+  prob.level = 0.8,
+  add.abline = TRUE
+  )
+}
+
+```
+
+We added the Fst values to the EEMS map:
+```{r Fst with EEMS}
+#Load population data (coordinates) and Fst data
+meta_data_pop <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Populations/taxus_sample_29pop.csv", sep = ";", dec = ",", header = TRUE)
+meta_data_pop$Longitude <- as.numeric(meta_data_pop$Longitude)
+meta_data_pop$Latitude <- as.numeric(meta_data_pop$Latitude)
+
+#Load Fst data
+load("C:/Users/tfrancisco/Documents/Thesis/Results/all_species/FST_index/Bayescan_PSD_Taxus.Rdata")  #Contains Bayescan_PSD_Taxus
+
+#Merge population coordinates with Fst values
+meta_data_merged <- merge(meta_data_pop, Bayescan_PSD_Taxus, by = "Population")
+
+#Convert to sf and project to Mercator
+sf_data <- st_as_sf(meta_data_merged, coords = c("Longitude", "Latitude"), crs = 4326)  # WGS84
+sf_data_mercator <- st_transform(sf_data, crs = "+proj=merc +datum=WGS84")
+
+#Rescale Fst to point size
+min_size <- 1.5
+max_size <- 3
+sf_data_mercator$size_scaled <- rescale(sf_data_mercator$Fst, to = c(min_size, max_size))
+
+#Coordinates for plotting
+coords <- st_coordinates(sf_data_mercator)
+x_coords <- coords[, 1]
+y_coords <- coords[, 2]
+
+#EEMS plotting loop for 3 chains
+for(x in 1:3){
+  resFolder <- paste0("Taxus_10pop_1000_chain", x, "_new")
+  
+  #Set working directory where EEMS results are stored
+  setwd("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Pop10_indiv/1000/")
+  setwd(paste0("./", resFolder))
+  
+  #Check files
+  as.data.frame(list.files())
+  
+  #EEMS results path
+  eems_results <- "./"
+  if (!file.exists(eems_results)) stop("Check that the rEEMSplots package is installed without errors.")
+  
+  #Projection settings
+  projection_none <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"  #Input 
+  projection_mercator <- "+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"  #Output mercator
+  
+  #Read coast and Taxus shape files
+  coast <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/ne_10m_coastline.shp")
+  Taxus_shp <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/Taxus_baccata_plg_clip.shp")
+  coast <- raster::crop(x = coast, y = Taxus_shp)
+  
+  #Project coastlines
+  coast_mercator <- spTransform(coast, CRSobj = CRS(projection_mercator))
+  
+  #Plotting EEMS
+  eems.plots(
+    mcmcpath = eems_results,  #EEMS results path
+    plotpath = resFolder,  #Folder where the plot will be saved
+    
+    longlat = TRUE,  #Longitude and latitude order
+    out.png = FALSE,  #Output as PNG
+    plot.height = 8, plot.width = 9,  #Plot dimensions
+    
+    add.outline = TRUE, col.outline = "gray80", lwd.outline = 3,  #Outline
+    add.demes = TRUE, col.demes = "black", pch.demes = 1,  #Demes
+    
+    #Geographic projections
+    projection.in = projection_none,
+    projection.out = projection_mercator,
+    
+    #Plot Europe and North Africa
+    m.plot.xy = { 
+      plot(coast_mercator, col = "gray30", add = TRUE)  #Coastline plot
+      points(x_coords, y_coords, pch = 21, bg = "black",  #Plot populations with size based on Fst
+             cex = sf_data_mercator$size_scaled, col = "white")
+      #Add legend for Fst values and sizes
+      legend("bottomright", 
+             legend = c(round(min(sf_data_mercator$Fst, na.rm = TRUE), 2), 
+                        round(max(sf_data_mercator$Fst, na.rm = TRUE), 2)), 
+             pch = 21, pt.bg = "black", col = "white", 
+             pt.cex = c(min_size, max_size),  #Corrected point sizes
+             title = expression(F[ST]~"Index"), 
+             bty = "n")
+    },
+    
+    #Add additional elements to plot
+    add.r.squared = TRUE,
+    add.title = TRUE,
+    prob.level = 0.8,
+    add.abline = TRUE
+  )
+}
+```
+
+# Relationship GDI with EEMS and Fst 
+
+We wanted to investigate the relationship between GDI and the estimated effective gene flow. To do this, we loaded the migration estimates from EEMS for the grid and generated point estimates of migration for the 29 genotyped populations.
+
+## All pop
+```{r load EEMS migration rates}
+mcmcmrates <- scan("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Pop10_indiv/1000/Taxus_10pop_1000_chain1_new/mcmcmrates.txt")  # Reads as a vector
+mcmcw <- scan("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Pop10_indiv/1000/Taxus_10pop_1000_chain1_new/mcmcwcoord.txt")
+mcmcx <- scan("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Pop10_indiv/1000/Taxus_10pop_1000_chain1_new/mcmcxcoord.txt")
+mcmcy <- scan("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Pop10_indiv/1000/Taxus_10pop_1000_chain1_new/mcmcycoord.txt")
+mcmcz <- scan("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Pop10_indiv/1000/Taxus_10pop_1000_chain1_new/mcmczcoord.txt")
+```
+
+```{r check the consistency}
+length(mcmcmrates)
+length(mcmcx)
+length(mcmcy)
+```
+
+We needed to assign for each of our 29 popualtions, the nearest grid with migration estimates. We used the get.knnx function
+```{r search nearest grid for the 29 pop}
+meta_data_pop_extraction <- data.frame(Population=meta_data_pop$Population,x=meta_data_pop$Longitude,y=meta_data_pop$Latitude)
+meta_data_pop_extraction$x <- as.numeric(meta_data_pop_extraction$x)
+meta_data_pop_extraction$y <- as.numeric(meta_data_pop_extraction$y)
+library(FNN)
+
+#Combine EEMS coordinates into a matrix
+eems_coords <- cbind(mcmcx, mcmcy)
+
+#Find the nearest EEMS grid point for each population
+nearest <- get.knnx(eems_coords, meta_data_pop_extraction[, c("x", "y")], k = 1)
+closest_indices <- nearest$nn.index[, 1]  #Give the associated nearest row in the data 
+```
+
+We need to extract the values corresponding to the nearest grid point for each of the 29 populations and apply the same scaling as used in the EEMS plot.
+```{r extract migration values for populations}
+values <- as.matrix(mcmcmrates)[closest_indices,]
+
+#Scaling to log10 as the EEMS migration map
+meta_data_pop$EEMS_values <- log10(values)
+```
+
+Load GDI data to calculate the correlation
+
+```{r load GDI data}
+load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/AGD/RDA/data/AGD_index_random_same_AF.Rdata")
+
+load("C:/Users/tfrancisco/Documents/Thesis/Results/all_species/FST_index/Bayescan_PSD_Taxus.Rdata")
+
+load("C:/Users/tfrancisco/Documents/Thesis/Results/all_species/FST_index/Bayescan_FST_pop_order_Taxus_bis.Rdata")
+#meta_data_pop_order$pop_abbrev <- c("ANC","BLI","BOM","BRA","BUJA","BUJG","CAR","CED","PDT","UMB","GOR","HAR","HHR","JUR","CHO","OLY","VOU","PAT","RAS","RWM","BAU","SAV","SDF","SUE","UNS","VAL","VIS","WAL","YEW")
+```
+
+merge both dataset
+```{r correlation GDI EEMS}
+data_cor <- merge(meta_data_pop,AGD_index_random_same_AF,"Population") %>% merge(Bayescan_FST_pop_order_Taxus_bis,"Population")
+
+#EEMs 
+cor(data_cor$EEMS_values,data_cor$values_random_same_AF)
+cor.test(data_cor$EEMS_values,data_cor$values_random_same_AF)
+
+#Fst
+cor(data_cor$Fst,data_cor$values_random_same_AF)
+cor.test(data_cor$Fst,data_cor$values_random_same_AF)
+
+cor(data_cor$Fst,data_cor$EEMS_values)
+s <- cor.test(data_cor$Fst,data_cor$EEMS_values)
+s$p.value
+
+data_cor$Latitude <- as.numeric(data_cor$Latitude)
+cor(data_cor$values_random_same_AF,data_cor$Latitude)
+s <- cor.test(data_cor$values_random_same_AF,data_cor$Latitude)
+s$p.value
+```
+
+We also looked at the correlation between GDI and Fst values from Bayescan: 
+```{r Correlation GDI Fst}
+load("C:/Users/tfrancisco/Documents/Thesis/Results/all_species/FST_index/Bayescan_PSD_Taxus.Rdata")
+
+load("C:/Users/tfrancisco/Documents/Thesis/Results/all_species/FST_index/Bayescan_FST_pop_order_Taxus_bis.Rdata")
+
+df_merge_all <- merge(Bayescan_FST_pop_order_Taxus_bis,data_cor, "Population" )
+
+#correlation Fst GDI
+cor(df_merge_all$Fst.x,df_merge_all$values_random_same_AF)
+cor.test(df_merge_all$Fst.x,df_merge_all$values_random_same_AF)
+
+#correlation Fst EEMS
+cor(df_merge_all$Fst.x,df_merge_all$EEMS_values)
+cor.test(df_merge_all$Fst.x,df_merge_all$EEMS_values)
+
+
+#write_xlsx(Bayescan_PSD_Taxus,"C:/Users/tfrancisco/Documents/Thesis/Results/all_species/FST_index/Bayescan_PSD_Taxus.xlsx")
+
+```
+
+## 173 populations 
+
+```{r load meta_data_migration}
+meta_data_SSR<- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/Meta_data_pop_taxus_migration.csv",h=T,sep=";",dec=",")
+```
+
+We needed to assign, for each of our 29 populations, the nearest grid point with migration estimates. We used the get.knnx function.
+```{r search nearest grid for the 29 pop reduce}
+meta_data_pop_extraction <- data.frame(Population=meta_data_SSR$Population,x=meta_data_SSR$LONG,y=meta_data_SSR$LAT)
+meta_data_pop_extraction$x <- as.numeric(meta_data_pop_extraction$x)
+meta_data_pop_extraction$y <- as.numeric(meta_data_pop_extraction$y)
+library(FNN)
+
+#Combine EEMS coordinates into a matrix
+eems_coords <- cbind(mcmcx, mcmcy)
+
+#Find the nearest EEMS grid point for each population
+nearest <- get.knnx(eems_coords, meta_data_pop_extraction[, c("x", "y")], k = 1)
+closest_indices <- nearest$nn.index[, 1]  #Give the associated nearest row in the data 
+```
+
+We need to extract the values corresponding to the nearest grid point for each of the 29 populations and apply the same scaling as used in the EEMS plot.
+```{r extract migration values for populations reduce}
+values <- as.matrix(mcmcmrates)[closest_indices,]
+
+#Scaling to log10 as the EEMS migration map
+meta_data_SSR$EEMS_values <- log10(values)
+
+df_10N
+
+data_EEMS_173pop <- merge(meta_data_SSR,df_10N,"Population")
+write.csv(data_EEMS_173pop[,c(1,3,4,5,9)],"C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/EEMS_values/data_EEMS_173pop.csv")
+
+library(ggplot2)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(scales)
+
+#Load your data
+
+
+#Convert to sf object
+data_sf <- st_as_sf(data_EEMS_173pop[,c(1,3,4,5,9)], coords = c("LONG.x", "LAT.x"), crs = 4326)
+
+#Get a base map
+admin <- ne_countries(scale = "medium", returnclass = "sf")
+
+#Create plot
+plot <- ggplot() +
+  geom_sf(data = admin, fill = gray(0.92), color = "white") +
+  geom_sf(data = data_sf, aes(color = EEMS_values), size = 3) +
+  scale_color_gradient(low = "orange", high = "lightblue", 
+                       name = "EEMS value", 
+                       guide = guide_colorbar(title.position = "top")) +
+  coord_sf(xlim = c(-10, 50), ylim = c(35, 62), expand = FALSE) +
+  theme_minimal(base_size = 12) +
+  labs(title = "EEMS Values Across Populations",
+       x = "Longitude", y = "Latitude") +
+  theme(legend.position = "right",
+        plot.title = element_text(hjust = 0.5))
+
+plot
+pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/EEMS_values/figures/EEMS_173pop.pdf"));print(plot);dev.off()
+
+plot <- ggplot() +
+  geom_sf(data = admin, fill = gray(0.92), color = "grey") +
+  geom_sf(data = data_sf, aes(color = EEMS_values), size = 3) +
+  scale_color_gradientn(
+    colours = c("orange", "white", "lightblue"),
+    values = rescale(c(min(data_sf$EEMS_values, na.rm = TRUE), 0, max(data_sf$EEMS_values, na.rm = TRUE))),
+    name = "EEMS value",
+    guide = guide_colorbar(title.position = "top")
+  ) +
+  coord_sf(xlim = c(-10, 50), ylim = c(30, 62), expand = FALSE) +
+  theme_minimal(base_size = 12) +
+  labs(title = "EEMS Values Across Populations",
+       x = "Longitude", y = "Latitude") +
+  theme(legend.position = "right",
+        plot.title = element_text(hjust = 0.5))
+plot
+pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/EEMS_values/figures/EEMS_173pop_more_contrast.pdf"));print(plot);dev.off()
+```
+
+
+#### 1500 
+
+```{r 1500}
+setwd("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Pop10_indiv/1500/")
+# Name of the folder where EEMS results are stored (mcmcpath)
+resFolder <- "Taxus_10pop_1500_chain1"
+
+# Going to mcmcpath
+setwd(paste0("./", resFolder))
+as.data.frame(list.files())
+
+# Setting proper path to eems_results
+eems_results <- "./"
+if (!file.exists(eems_results)) stop("Check that the rEEMSplots package is installed without errors.")
+# name_figures <- "Taxus-all-1000demes-default"
+
+# Map projection 
+projection_none <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0" # input 
+projection_mercator <- "+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs" # output mercator
+projection_lambert <- "+proj=lcc +lat_1=20 +lat_2=70 +lon_0=10 + lon_1=60" # output Lambert conformal
+  
+# Getting a zoomed map on the Taxus distribution
+
+coast <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/ne_10m_coastline.shp")
+Taxus_shp <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/Taxus_baccata_plg_clip.shp")
+coast <- raster::crop(x = coast, y = Taxus_shp)
+coast_mercator <- spTransform(coast, CRSobj = CRS(projection_mercator))
+coast_lambert <- spTransform(coast, CRSobj = CRS(projection_lambert))
+
+# Plotting...
+eems.plots(
+  # paths to EEMS results 
+  mcmcpath = eems_results,
+  
+  # label for the figures
+  plotpath = resFolder,
+  
+  # Does the longitude column precede the latitude column in the .coord file? 
+  longlat = TRUE,
+  
+  # plot type (PDF or PNG) and size 
+  out.png = FALSE, # out.png = TRUE, res = 600, 
+  plot.height = 8, plot.width = 9,
+  
+  # grid
+  #add.grid = TRUE, lwd.grid = 1, col.grid = "gray80", #gray80
+  
+  # outline
+  add.outline = TRUE,  col.outline = "gray80", lwd.outline = 3,
+  
+  # demes
+  #add.demes = TRUE, col.demes = "black", 
+  #pch.demes = 1, min.cex.demes = .5, max.cex.demes = 1.5,
+  
+  # geographic projections
+  projection.in = projection_none,
+  projection.out = projection_mercator,
+  
+  # map
+  # add.map = FALSE, # TRUE 
+  # col.map = "gray30",
+  # lwd.map = 0.3,
+  # eems.colors = brewer.pal(11, "Spectral"),
+  
+  # plotting Europe and North Africa
+ m.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.5, col = "white") 
+  },
+  q.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here as well
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.5, col = "white") 
+  },
+  
+  # others
+  add.r.squared = TRUE,
+  add.title = TRUE,
+  prob.level = 0.8,
+  add.abline = TRUE
+  )
+```
+
+### Reduce to European distribution
+
+#### 100
+
+```{r 100 reduce extent}
+for(x in 1:3){
+  
+  resFolder <- paste0("Taxus_10pop_100_chain",x,"_new_correct")
+# Name of the folder where EEMS results are stored (mcmcpath)
+setwd("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Pop10_indiv/100/")
+setwd(paste0("./", resFolder))
+as.data.frame(list.files())
+
+# Setting proper path to eems_results
+eems_results <- "./"
+if (!file.exists(eems_results)) stop("Check that the rEEMSplots package is installed without errors.")
+# name_figures <- "Taxus-all-1000demes-default"
+
+# Map projection 
+projection_none <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0" # input 
+projection_mercator <- "+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs" # output mercator
+projection_lambert <- "+proj=lcc +lat_1=20 +lat_2=70 +lon_0=10 + lon_1=60" # output Lambert conformal
+  
+# Getting a zoomed map on the Taxus distribution
+
+coast <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/ne_10m_coastline.shp")
+Taxus_shp <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/Taxus_baccata_plg_clip.shp")
+coast <- raster::crop(x = coast, y = Taxus_shp)
+coast_mercator <- spTransform(coast, CRSobj = CRS(projection_mercator))
+coast_lambert <- spTransform(coast, CRSobj = CRS(projection_lambert))
+
+# Plotting...
+eems.plots(
+  # paths to EEMS results 
+  mcmcpath = eems_results,
+  
+  # label for the figures
+  plotpath = resFolder,
+  
+  # Does the longitude column precede the latitude column in the .coord file? 
+  longlat = TRUE,
+  
+  # plot type (PDF or PNG) and size 
+  out.png = FALSE, # out.png = TRUE, res = 600, 
+  plot.height = 8, plot.width = 9,
+  # grid
+  #add.grid = TRUE, lwd.grid = 1, col.grid = "gray80", #gray80
+  # outline
+  add.outline = TRUE,  col.outline = "gray80", lwd.outline = 3,
+  
+  # demes
+  add.demes = TRUE, col.demes = "black", 
+  pch.demes = 1, min.cex.demes = .5, max.cex.demes = 1.5,
+  
+  # geographic projections
+  projection.in = projection_none,
+  projection.out = projection_mercator,
+  # map
+  # add.map = FALSE, # TRUE 
+  # col.map = "gray30",
+  # lwd.map = 0.3,
+  # eems.colors = brewer.pal(11, "Spectral"),
+  
+  # plotting Europe and North Africa
+ m.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.9, col = "white") 
+  },
+  q.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here as well
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.9, col = "white") 
+  },
+  
+  # others
+  add.r.squared = TRUE,
+  add.title = TRUE,
+  prob.level = 0.8,
+  add.abline = TRUE
+  )
+}
+```
+
+#### 400
+
+```{r 400 reduce extent}
+for(x in 1:3){
+  
+  resFolder <- paste0("Taxus_10pop_400_chain",x,"_new_correct")
+# Name of the folder where EEMS results are stored (mcmcpath)
+setwd("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Pop10_indiv/400/")
+setwd(paste0("./", resFolder))
+as.data.frame(list.files())
+
+# Setting proper path to eems_results
+eems_results <- "./"
+if (!file.exists(eems_results)) stop("Check that the rEEMSplots package is installed without errors.")
+# name_figures <- "Taxus-all-1000demes-default"
+
+# Map projection 
+projection_none <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0" # input 
+projection_mercator <- "+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs" # output mercator
+projection_lambert <- "+proj=lcc +lat_1=20 +lat_2=70 +lon_0=10 + lon_1=60" # output Lambert conformal
+  
+# Getting a zoomed map on the Taxus distribution
+
+coast <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/ne_10m_coastline.shp")
+Taxus_shp <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/Taxus_baccata_plg_clip.shp")
+coast <- raster::crop(x = coast, y = Taxus_shp)
+coast_mercator <- spTransform(coast, CRSobj = CRS(projection_mercator))
+coast_lambert <- spTransform(coast, CRSobj = CRS(projection_lambert))
+
+# Plotting...
+eems.plots(
+  # paths to EEMS results 
+  mcmcpath = eems_results,
+  
+  # label for the figures
+  plotpath = resFolder,
+  
+  # Does the longitude column precede the latitude column in the .coord file? 
+  longlat = TRUE,
+  
+  # plot type (PDF or PNG) and size 
+  out.png = FALSE, # out.png = TRUE, res = 600, 
+  plot.height = 8, plot.width = 9,
+  # grid
+  #add.grid = TRUE, lwd.grid = 1, col.grid = "gray80", #gray80
+  # outline
+  add.outline = TRUE,  col.outline = "gray80", lwd.outline = 3,
+  
+  # demes
+  add.demes = TRUE, col.demes = "black", 
+  pch.demes = 1, min.cex.demes = .5, max.cex.demes = 1.5,
+  
+  # geographic projections
+  projection.in = projection_none,
+  projection.out = projection_mercator,
+  # map
+  # add.map = FALSE, # TRUE 
+  # col.map = "gray30",
+  # lwd.map = 0.3,
+  # eems.colors = brewer.pal(11, "Spectral"),
+  
+  # plotting Europe and North Africa
+ m.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.9, col = "white") 
+  },
+  q.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here as well
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.9, col = "white") 
+  },
+  
+  # others
+  add.r.squared = TRUE,
+  add.title = TRUE,
+  prob.level = 0.8,
+  add.abline = TRUE
+  )
+}
+```
+
+#### 1000
+
+```{r 1000 reduce extent}
+for(x in 1:3){
+  
+  resFolder <- paste0("Taxus_10pop_1000_chain",x,"_new_new_reduce")
+# Name of the folder where EEMS results are stored (mcmcpath)
+setwd("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Pop10_indiv/1000/")
+setwd(paste0("./", resFolder))
+as.data.frame(list.files())
+
+# Setting proper path to eems_results
+eems_results <- "./"
+if (!file.exists(eems_results)) stop("Check that the rEEMSplots package is installed without errors.")
+# name_figures <- "Taxus-all-1000demes-default"
+
+# Map projection 
+projection_none <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0" # input 
+projection_mercator <- "+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs" # output mercator
+projection_lambert <- "+proj=lcc +lat_1=20 +lat_2=70 +lon_0=10 + lon_1=60" # output Lambert conformal
+  
+# Getting a zoomed map on the Taxus distribution
+
+coast <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/ne_10m_coastline.shp")
+Taxus_shp <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/Taxus_baccata_plg_clip.shp")
+coast <- raster::crop(x = coast, y = Taxus_shp)
+coast_mercator <- spTransform(coast, CRSobj = CRS(projection_mercator))
+coast_lambert <- spTransform(coast, CRSobj = CRS(projection_lambert))
+
+# Plotting...
+eems.plots(
+  # paths to EEMS results 
+  mcmcpath = eems_results,
+  
+  # label for the figures
+  plotpath = resFolder,
+  
+  # Does the longitude column precede the latitude column in the .coord file? 
+  longlat = TRUE,
+  
+  # plot type (PDF or PNG) and size 
+  out.png = FALSE, # out.png = TRUE, res = 600, 
+  plot.height = 8, plot.width = 9,
+  # grid
+  #add.grid = TRUE, lwd.grid = 1, col.grid = "gray80", #gray80
+  # outline
+  add.outline = TRUE,  col.outline = "gray80", lwd.outline = 3,
+  
+  # demes
+  add.demes = TRUE, col.demes = "black", 
+  pch.demes = 1, min.cex.demes = .5, max.cex.demes = 1.5,
+  
+  # geographic projections
+  projection.in = projection_none,
+  projection.out = projection_mercator,
+  # map
+  # add.map = FALSE, # TRUE 
+  # col.map = "gray30",
+  # lwd.map = 0.3,
+  # eems.colors = brewer.pal(11, "Spectral"),
+  
+  # plotting Europe and North Africa
+ m.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.9, col = "white") 
+  },
+  q.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here as well
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.9, col = "white") 
+  },
+  
+  # others
+  add.r.squared = TRUE,
+  add.title = TRUE,
+  prob.level = 0.8,
+  add.abline = TRUE
+  )
+}
+```
+
+## All populations
+
+We also performed the analyses using all the available locations
+
+### Full extent
+
+#### 100
+
+```{r 100 all populations}
+for(x in 1:3){
+  
+  resFolder <- paste0("Taxus_allpop_100_chain",x)
+# Name of the folder where EEMS results are stored (mcmcpath)
+setwd("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Popall_indiv/100/")
+setwd(paste0("./", resFolder))
+as.data.frame(list.files())
+
+# Setting proper path to eems_results
+eems_results <- "./"
+if (!file.exists(eems_results)) stop("Check that the rEEMSplots package is installed without errors.")
+# name_figures <- "Taxus-all-1000demes-default"
+
+# Map projection 
+projection_none <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0" # input 
+projection_mercator <- "+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs" # output mercator
+projection_lambert <- "+proj=lcc +lat_1=20 +lat_2=70 +lon_0=10 + lon_1=60" # output Lambert conformal
+  
+# Getting a zoomed map on the Taxus distribution
+
+coast <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/ne_10m_coastline.shp")
+Taxus_shp <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/Taxus_baccata_plg_clip.shp")
+coast <- raster::crop(x = coast, y = Taxus_shp)
+coast_mercator <- spTransform(coast, CRSobj = CRS(projection_mercator))
+coast_lambert <- spTransform(coast, CRSobj = CRS(projection_lambert))
+
+# Plotting...
+eems.plots(
+  # paths to EEMS results 
+  mcmcpath = eems_results,
+  
+  # label for the figures
+  plotpath = resFolder,
+  
+  # Does the longitude column precede the latitude column in the .coord file? 
+  longlat = TRUE,
+  
+  # plot type (PDF or PNG) and size 
+  out.png = FALSE, # out.png = TRUE, res = 600, 
+  plot.height = 8, plot.width = 9,
+  # grid
+  #add.grid = TRUE, lwd.grid = 1, col.grid = "gray80", #gray80
+  # outline
+  add.outline = TRUE,  col.outline = "gray80", lwd.outline = 3,
+  
+  # demes
+  add.demes = TRUE, col.demes = "black", 
+  pch.demes = 1, min.cex.demes = .5, max.cex.demes = 1.5,
+  
+  # geographic projections
+  projection.in = projection_none,
+  projection.out = projection_mercator,
+  # map
+  # add.map = FALSE, # TRUE 
+  # col.map = "gray30",
+  # lwd.map = 0.3,
+  # eems.colors = brewer.pal(11, "Spectral"),
+  
+  # plotting Europe and North Africa
+ m.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.9, col = "white") 
+  },
+  q.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here as well
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.9, col = "white") 
+  },
+  
+  # others
+  add.r.squared = TRUE,
+  add.title = TRUE,
+  prob.level = 0.8,
+  add.abline = TRUE
+  )
+}
+```
+
+#### 400
+
+```{r 400 all populations}
+for(x in 1:3){
+  
+  resFolder <- paste0("Taxus_allpop_400_chain",x)
+# Name of the folder where EEMS results are stored (mcmcpath)
+setwd("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Popall_indiv/400/")
+setwd(paste0("./", resFolder))
+as.data.frame(list.files())
+
+# Setting proper path to eems_results
+eems_results <- "./"
+if (!file.exists(eems_results)) stop("Check that the rEEMSplots package is installed without errors.")
+# name_figures <- "Taxus-all-1000demes-default"
+
+# Map projection 
+projection_none <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0" # input 
+projection_mercator <- "+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs" # output mercator
+projection_lambert <- "+proj=lcc +lat_1=20 +lat_2=70 +lon_0=10 + lon_1=60" # output Lambert conformal
+  
+# Getting a zoomed map on the Taxus distribution
+
+coast <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/ne_10m_coastline.shp")
+Taxus_shp <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/Taxus_baccata_plg_clip.shp")
+coast <- raster::crop(x = coast, y = Taxus_shp)
+coast_mercator <- spTransform(coast, CRSobj = CRS(projection_mercator))
+coast_lambert <- spTransform(coast, CRSobj = CRS(projection_lambert))
+
+# Plotting...
+eems.plots(
+  # paths to EEMS results 
+  mcmcpath = eems_results,
+  
+  # label for the figures
+  plotpath = resFolder,
+  
+  # Does the longitude column precede the latitude column in the .coord file? 
+  longlat = TRUE,
+  
+  # plot type (PDF or PNG) and size 
+  out.png = FALSE, # out.png = TRUE, res = 600, 
+  plot.height = 8, plot.width = 9,
+  # grid
+  #add.grid = TRUE, lwd.grid = 1, col.grid = "gray80", #gray80
+  # outline
+  add.outline = TRUE,  col.outline = "gray80", lwd.outline = 3,
+  
+  # demes
+  add.demes = TRUE, col.demes = "black", 
+  pch.demes = 1, min.cex.demes = .5, max.cex.demes = 1.5,
+  
+  # geographic projections
+  projection.in = projection_none,
+  projection.out = projection_mercator,
+  # map
+  # add.map = FALSE, # TRUE 
+  # col.map = "gray30",
+  # lwd.map = 0.3,
+  # eems.colors = brewer.pal(11, "Spectral"),
+  
+  # plotting Europe and North Africa
+ m.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.9, col = "white") 
+  },
+  q.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here as well
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.9, col = "white") 
+  },
+  
+  # others
+  add.r.squared = TRUE,
+  add.title = TRUE,
+  prob.level = 0.8,
+  add.abline = TRUE
+  )
+}
+```
+
+#### 1000
+
+```{r 1000 all populations}
+for(x in 1:3){
+  
+  resFolder <- paste0("Taxus_allpop_1000_chain",x)
+# Name of the folder where EEMS results are stored (mcmcpath)
+setwd("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Popall_indiv/1000/")
+setwd(paste0("./", resFolder))
+as.data.frame(list.files())
+
+# Setting proper path to eems_results
+eems_results <- "./"
+if (!file.exists(eems_results)) stop("Check that the rEEMSplots package is installed without errors.")
+# name_figures <- "Taxus-all-1000demes-default"
+
+# Map projection 
+projection_none <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0" # input 
+projection_mercator <- "+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs" # output mercator
+projection_lambert <- "+proj=lcc +lat_1=20 +lat_2=70 +lon_0=10 + lon_1=60" # output Lambert conformal
+  
+# Getting a zoomed map on the Taxus distribution
+
+coast <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/ne_10m_coastline.shp")
+Taxus_shp <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/Taxus_baccata_plg_clip.shp")
+coast <- raster::crop(x = coast, y = Taxus_shp)
+coast_mercator <- spTransform(coast, CRSobj = CRS(projection_mercator))
+coast_lambert <- spTransform(coast, CRSobj = CRS(projection_lambert))
+
+# Plotting...
+eems.plots(
+  # paths to EEMS results 
+  mcmcpath = eems_results,
+  
+  # label for the figures
+  plotpath = resFolder,
+  
+  # Does the longitude column precede the latitude column in the .coord file? 
+  longlat = TRUE,
+  
+  # plot type (PDF or PNG) and size 
+  out.png = FALSE, # out.png = TRUE, res = 600, 
+  plot.height = 8, plot.width = 9,
+  # grid
+  #add.grid = TRUE, lwd.grid = 1, col.grid = "gray80", #gray80
+  # outline
+  add.outline = TRUE,  col.outline = "gray80", lwd.outline = 3,
+  
+  # demes
+  add.demes = TRUE, col.demes = "black", 
+  pch.demes = 1, min.cex.demes = .5, max.cex.demes = 1.5,
+  
+  # geographic projections
+  projection.in = projection_none,
+  projection.out = projection_mercator,
+  # map
+  # add.map = FALSE, # TRUE 
+  # col.map = "gray30",
+  # lwd.map = 0.3,
+  # eems.colors = brewer.pal(11, "Spectral"),
+  
+  # plotting Europe and North Africa
+ m.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.9, col = "white") 
+  },
+  q.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here as well
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.9, col = "white") 
+  },
+  
+  # others
+  add.r.squared = TRUE,
+  add.title = TRUE,
+  prob.level = 0.8,
+  add.abline = TRUE
+  )
+}
+```
+
+
+
+
+
+# DRAFT
+
+ALL pop reduce extent 1000
+```{r 1000 draft, eval=FALSE, include=FALSE}
+setwd("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Popall_indiv/1000/")
+# Name of the folder where EEMS results are stored (mcmcpath)
+resFolder <- "Taxus_allpop_1000_chain1_reduce"
+
+# Going to mcmcpath
+setwd(paste0("./", resFolder))
+as.data.frame(list.files())
+
+# Setting proper path to eems_results
+eems_results <- "./"
+if (!file.exists(eems_results)) stop("Check that the rEEMSplots package is installed without errors.")
+# name_figures <- "Taxus-all-1000demes-default"
+
+# Map projection 
+projection_none <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0" # input 
+projection_mercator <- "+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs" # output mercator
+projection_lambert <- "+proj=lcc +lat_1=20 +lat_2=70 +lon_0=10 + lon_1=60" # output Lambert conformal
+  
+# Getting a zoomed map on the Taxus distribution
+
+coast <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/ne_10m_coastline.shp")
+Taxus_shp <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/Taxus_baccata_plg_clip.shp")
+coast <- raster::crop(x = coast, y = Taxus_shp)
+coast_mercator <- spTransform(coast, CRSobj = CRS(projection_mercator))
+coast_lambert <- spTransform(coast, CRSobj = CRS(projection_lambert))
+
+# Plotting...
+eems.plots(
+  # paths to EEMS results 
+  mcmcpath = eems_results,
+  
+  # label for the figures
+  plotpath = resFolder,
+  
+  # Does the longitude column precede the latitude column in the .coord file? 
+  longlat = TRUE,
+  
+  # plot type (PDF or PNG) and size 
+  out.png = FALSE, # out.png = TRUE, res = 600, 
+  plot.height = 8, plot.width = 9,
+  
+  # grid
+  add.grid = TRUE, lwd.grid = 1, col.grid = "gray80", #gray80
+  
+  # outline
+  add.outline = TRUE,  col.outline = "gray80", lwd.outline = 3,
+  
+  # demes
+  add.demes = TRUE, col.demes = "black", 
+  pch.demes = 1, min.cex.demes = .5, max.cex.demes = 1.5,
+  
+  # geographic projections
+  projection.in = projection_none,
+  projection.out = projection_mercator,
+  
+  # map
+  # add.map = FALSE, # TRUE 
+  # col.map = "gray30",
+  # lwd.map = 0.3,
+  # eems.colors = brewer.pal(11, "Spectral"),
+  
+  # plotting Europe and North Africa
+ m.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.5, col = "white") 
+  },
+  q.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here as well
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.5, col = "white") 
+  },
+  
+  # others
+  add.r.squared = TRUE,
+  add.title = TRUE,
+  prob.level = 0.8,
+  add.abline = TRUE
+    
+  )
+
+```
+
+### 100
+
+```{r 100 draft, eval=FALSE, include=FALSE}
+setwd("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Pop10_indiv/100/")
+# Name of the folder where EEMS results are stored (mcmcpath)
+resFolder <- "Taxus_10pop_100_chain1"
+
+# Going to mcmcpath
+setwd(paste0("./", resFolder))
+as.data.frame(list.files())
+
+# Setting proper path to eems_results
+eems_results <- "./"
+if (!file.exists(eems_results)) stop("Check that the rEEMSplots package is installed without errors.")
+# name_figures <- "Taxus-all-1000demes-default"
+
+# Getting a zoomed map on the Taxus distribution
+
+coast <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/ne_10m_coastline.shp")
+Taxus_shp <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/Taxus_baccata_plg_clip.shp")
+coast <- raster::crop(x = coast, y = Taxus_shp)
+coast_mercator <- spTransform(coast, CRSobj = CRS(projection_mercator))
+coast_lambert <- spTransform(coast, CRSobj = CRS(projection_lambert))
+
+# Plotting...
+eems.plots(
+  # paths to EEMS results 
+  mcmcpath = eems_results,
+  
+  # label for the figures
+  plotpath = resFolder,
+  
+  # Does the longitude column precede the latitude column in the .coord file? 
+  longlat = TRUE,
+  
+  # plot type (PDF or PNG) and size 
+  out.png = FALSE, # out.png = TRUE, res = 600, 
+  plot.height = 8, plot.width = 9,
+  
+  # grid
+  #add.grid = TRUE, lwd.grid = 1, col.grid = "gray80", #gray80
+  
+  # outline
+  add.outline = TRUE,  col.outline = "gray80", lwd.outline = 3,
+  
+  # demes
+  #add.demes = TRUE, col.demes = "black", 
+  #pch.demes = 1, min.cex.demes = .5, max.cex.demes = 1.5,
+  
+  # geographic projections
+  projection.in = projection_none,
+  projection.out = projection_mercator,
+  
+  # map
+  # add.map = FALSE, # TRUE 
+  # col.map = "gray30",
+  # lwd.map = 0.3,
+  # eems.colors = brewer.pal(11, "Spectral"),
+  
+  # plotting Europe and North Africa
+  #m.plot.xy = { plot(coast_mercator, col = "gray30", add = TRUE)},
+  #q.plot.xy = { plot(coast_mercator, col = "gray30", add = TRUE)},
+  m.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.5, col = "white") 
+  },
+  q.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here as well
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.5, col = "white") 
+  },
+  
+  # others
+  add.r.squared = TRUE,
+  add.title = TRUE,
+  prob.level = 0.8,
+  add.abline = TRUE
+    
+  )
+```
+
+### 400
+
+```{r 400 draft, eval=FALSE, include=FALSE}
+setwd("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Pop10_indiv/400/")
+# Name of the folder where EEMS results are stored (mcmcpath)
+resFolder <- "Taxus_10pop_400_chain3_new"
+
+# Going to mcmcpath
+setwd(paste0("./", resFolder))
+as.data.frame(list.files())
+
+# Setting proper path to eems_results
+eems_results <- "./"
+if (!file.exists(eems_results)) stop("Check that the rEEMSplots package is installed without errors.")
+# name_figures <- "Taxus-all-1000demes-default"
+
+# Map projection 
+projection_none <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0" # input 
+projection_mercator <- "+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs" # output mercator
+projection_lambert <- "+proj=lcc +lat_1=20 +lat_2=70 +lon_0=10 + lon_1=60" # output Lambert conformal
+  
+# Getting a zoomed map on the Taxus distribution
+
+coast <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/ne_10m_coastline.shp")
+Taxus_shp <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/Taxus_baccata_plg_clip.shp")
+coast <- raster::crop(x = coast, y = Taxus_shp)
+coast_mercator <- spTransform(coast, CRSobj = CRS(projection_mercator))
+coast_lambert <- spTransform(coast, CRSobj = CRS(projection_lambert))
+
+# Plotting...
+eems.plots(
+  # paths to EEMS results 
+  mcmcpath = eems_results,
+  
+  # label for the figures
+  plotpath = resFolder,
+  
+  # Does the longitude column precede the latitude column in the .coord file? 
+  longlat = TRUE,
+  
+  # plot type (PDF or PNG) and size 
+  out.png = FALSE, # out.png = TRUE, res = 600, 
+  plot.height = 8, plot.width = 9,
+  
+  # grid
+  #add.grid = TRUE, lwd.grid = 1, col.grid = "gray80", #gray80
+  
+  # outline
+  add.outline = TRUE,  col.outline = "gray80", lwd.outline = 3,
+  
+  # demes
+  #add.demes = TRUE, col.demes = "black", 
+  #pch.demes = 1, min.cex.demes = .5, max.cex.demes = 1.5,
+  
+  # geographic projections
+  projection.in = projection_none,
+  projection.out = projection_mercator,
+  
+  # map
+  # add.map = FALSE, # TRUE 
+  # col.map = "gray30",
+  # lwd.map = 0.3,
+  # eems.colors = brewer.pal(11, "Spectral"),
+  
+  # plotting Europe and North Africa
+  #m.plot.xy = { plot(coast_mercator, col = "gray30", add = TRUE)},
+  #q.plot.xy = { plot(coast_mercator, col = "gray30", add = TRUE)},
+  m.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.5, col = "white") 
+  },
+  q.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here as well
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.5, col = "white") 
+  },
+  
+  # others
+  add.r.squared = TRUE,
+  add.title = TRUE,
+  prob.level = 0.8,
+  add.abline = TRUE
+    
+  )
+
+```
+
+
+#### default parameters
+
+```{r 1000 draft bis, eval=FALSE, include=FALSE}
+setwd("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Pop10_indiv/1000/")
+# Name of the folder where EEMS results are stored (mcmcpath)
+resFolder <- "Taxus_10pop_1000_chain3_new"
+
+# Going to mcmcpath
+setwd(paste0("./", resFolder))
+as.data.frame(list.files())
+
+# Setting proper path to eems_results
+eems_results <- "./"
+if (!file.exists(eems_results)) stop("Check that the rEEMSplots package is installed without errors.")
+# name_figures <- "Taxus-all-1000demes-default"
+
+# Map projection 
+projection_none <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0" # input 
+projection_mercator <- "+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs" # output mercator
+projection_lambert <- "+proj=lcc +lat_1=20 +lat_2=70 +lon_0=10 + lon_1=60" # output Lambert conformal
+  
+# Getting a zoomed map on the Taxus distribution
+
+coast <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/ne_10m_coastline.shp")
+Taxus_shp <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/Taxus_baccata_plg_clip.shp")
+coast <- raster::crop(x = coast, y = Taxus_shp)
+coast_mercator <- spTransform(coast, CRSobj = CRS(projection_mercator))
+coast_lambert <- spTransform(coast, CRSobj = CRS(projection_lambert))
+
+# Plotting...
+eems.plots(
+  # paths to EEMS results 
+  mcmcpath = eems_results,
+  
+  # label for the figures
+  plotpath = resFolder,
+  
+  # Does the longitude column precede the latitude column in the .coord file? 
+  longlat = TRUE,
+  
+  # plot type (PDF or PNG) and size 
+  out.png = FALSE, # out.png = TRUE, res = 600, 
+  plot.height = 8, plot.width = 9,
+  
+  # grid
+  #add.grid = TRUE, lwd.grid = 1, col.grid = "gray80", #gray80
+  
+  # outline
+  add.outline = TRUE,  col.outline = "gray80", lwd.outline = 3,
+  
+  # demes
+  #add.demes = TRUE, col.demes = "black", 
+  #pch.demes = 1, min.cex.demes = .5, max.cex.demes = 1.5,
+  
+  # geographic projections
+  projection.in = projection_none,
+  projection.out = projection_mercator,
+  
+  # map
+  # add.map = FALSE, # TRUE 
+  # col.map = "gray30",
+  # lwd.map = 0.3,
+  # eems.colors = brewer.pal(11, "Spectral"),
+  
+  # plotting Europe and North Africa
+ m.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.5, col = "white") 
+  },
+  q.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here as well
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.5, col = "white") 
+  },
+  
+  # others
+  add.r.squared = TRUE,
+  add.title = TRUE,
+  prob.level = 0.8,
+  add.abline = TRUE
+    
+  )
+```
+
+```{r save draft, eval=FALSE, include=FALSE}
+resFolder <- "Taxus_10pop_1000_chain1_new"
+eems_results <- paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Pop10_indiv/1000/", resFolder, "/")
+
+# Read the migration rate file
+migration_rates <- read.table(paste0(eems_results, "mcmcmrates.txt"), header = FALSE)
+
+# Print the first few rows to check the structure
+print(head(migration_rates))
+
+```
+
+```{r extract draft, eval=FALSE, include=FALSE}
+library(rEEMSplots)
+
+# Define the path to your EEMS results
+eems_results <- "./"  # This should be set correctly to the folder with results
+
+# Load migration rates using the correct function
+mcmc_data <- readMcmcOutput(eems_results)
+
+# Extract migration rates
+migration_rates <- mcmc_data$mcmcmrates  # This stores the migration surface data
+
+# Check the structure
+str(migration_rates)
+```
+
+```{r 1000 elia s parameters draft, eval=FALSE, include=FALSE}
+for(x in 1:3){
+  
+  resFolder <- paste0("Taxus_10pop_1000_chain",x,"_new")
+# Name of the folder where EEMS results are stored (mcmcpath)
+setwd("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Migration/Runs_EEMS/Pop10_indiv/1000/")
+setwd(paste0("./", resFolder))
+as.data.frame(list.files())
+
+# Setting proper path to eems_results
+eems_results <- "./"
+if (!file.exists(eems_results)) stop("Check that the rEEMSplots package is installed without errors.")
+# name_figures <- "Taxus-all-1000demes-default"
+
+# Map projection 
+projection_none <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0" # input 
+projection_mercator <- "+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs" # output mercator
+projection_lambert <- "+proj=lcc +lat_1=20 +lat_2=70 +lon_0=10 + lon_1=60" # output Lambert conformal
+  
+# Getting a zoomed map on the Taxus distribution
+
+coast <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/ne_10m_coastline.shp")
+Taxus_shp <- rgdal::readOGR(dsn = "C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Migration/data_map/Taxus_baccata_plg_clip.shp")
+coast <- raster::crop(x = coast, y = Taxus_shp)
+coast_mercator <- spTransform(coast, CRSobj = CRS(projection_mercator))
+coast_lambert <- spTransform(coast, CRSobj = CRS(projection_lambert))
+
+# Plotting...
+eems.plots(
+  # paths to EEMS results 
+  mcmcpath = eems_results,
+  
+  # label for the figures
+  plotpath = resFolder,
+  
+  # Does the longitude column precede the latitude column in the .coord file? 
+  longlat = TRUE,
+  
+  # plot type (PDF or PNG) and size 
+  out.png = FALSE, # out.png = TRUE, res = 600, 
+  plot.height = 8, plot.width = 9,
+  # grid
+  #add.grid = TRUE, lwd.grid = 1, col.grid = "gray80", #gray80
+  # outline
+  add.outline = TRUE,  col.outline = "gray80", lwd.outline = 3,
+  
+  # demes
+  add.demes = TRUE, col.demes = "black", 
+  pch.demes = 1, min.cex.demes = .5, max.cex.demes = 1.5,
+  
+  # geographic projections
+  projection.in = projection_none,
+  projection.out = projection_mercator,
+  # map
+  # add.map = FALSE, # TRUE 
+  # col.map = "gray30",
+  # lwd.map = 0.3,
+  # eems.colors = brewer.pal(11, "Spectral"),
+  
+  # plotting Europe and North Africa
+ m.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.9, col = "white") 
+  },
+  q.plot.xy = { 
+    plot(coast_mercator, col = "gray30", add = TRUE)
+    # Add population points here as well
+    points(meta_data_pop_order_mercator, pch = 21, bg = "black", cex = 1.9, col = "white") 
+  },
+  
+  # others
+  add.r.squared = TRUE,
+  add.title = TRUE,
+  prob.level = 0.8,
+  add.abline = TRUE
+  )
+}
+```

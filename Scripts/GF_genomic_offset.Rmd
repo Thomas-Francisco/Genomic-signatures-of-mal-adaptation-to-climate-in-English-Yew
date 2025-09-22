@@ -27,9 +27,9 @@ library(rnaturalearth)
 
 # Introduction 
 
-This script aims to calculate the genomic offset using gradient forest. The genomic offset concept have already been explained in the script RDA_genomic_offset.
+This script uses gradient forest to calculate the genomic offset. The concept of genomic offset has already been explained in the RDA_genomic_offset script.
     
-Here, the GEA relationship was estimated using the Gradient forest machine learning method (see explanations in the GF_candidate_selection script).
+Here, the GEA relationship has been estimated using the Gradient Forest machine learning method (see the explanations in the GF_candidate_selection script).
 
 # Data
 
@@ -88,6 +88,9 @@ We have several sets:
 - One with less conservative thresholds  
 - One with more conservative thresholds  
 - One with the LC SNPs in common with the genomic data of the clonal bank populations   
+- One with random V2  
+- one with all outliers  
+
 ```{r load set of markers}
 list_set <- c("random_neutral_set_SNPs_T_adapcon_gentree_bis","random_set_taxus","outliers_set_final_overlapping_no_LD_LC_new_var","outliers_set_final_overlapping_no_LD_new_var","CG_common_set","random_set_taxus_not_overlap_both_dataset_V2","unique_outliers")
 
@@ -106,7 +109,7 @@ list_random_SNPs_same_AF_V2 <- random_set_taxus_not_overlap_both_dataset_V2$name
       
 # GEA relationship
 
-The next step is to calculate the relationship between the outliers and climatic variables using the nonlinear model of Gradient Forest (GF). This follows the same principle as candidate selection with GF; however, here we will summarize the information in the turnover function for each SNP using all predictors to create a single turnover function for all response variables.
+The next step is to calculate the relationship between the outliers and the climatic variables using the Gradient Forest (GF) nonlinear model. This follows the same principle as candidate selection with GF. However, here we summarise the information in the turnover function for each SNP, using all predictors to create a single turnover function for all response variables.
 
 - Model with all the SNPs:
 ```{r GEA using gradient forest all snps}
@@ -144,30 +147,30 @@ The next step is to calculate the relationship between the outliers and climatic
 ```
 
 - Model with random_same_AF V2 SNPs:
-```{r GEA using gradient forest all snps}
-Run_GEA_GF_random_same_AF_V2 <- gradientForest(data.frame(past_climatic[,vars],genomic_matrix[list_random_SNPs_same_AF_V2]), 
-                             predictor.vars=vars, 
-                             response.vars=colnames(genomic_matrix[list_random_SNPs_same_AF_V2]),
-                            corr.threshold=0.5, ntree=500, trace=T)
+```{r GEA using gradient forest random 2 snps}
+#Run_GEA_GF_random_same_AF_V2 <- gradientForest(data.frame(past_climatic[,vars],genomic_matrix[list_random_SNPs_same_AF_V2]), 
+#                             predictor.vars=vars, 
+#                             response.vars=colnames(genomic_matrix[list_random_SNPs_same_AF_V2]),
+#                            corr.threshold=0.5, ntree=500, trace=T)
 
-length(Run_GEA_GF_random_same_AF_V2$result)
+#length(Run_GEA_GF_random_same_AF_V2$result)
 ```
 
-```{r save GEA GF random, include=FALSE}
+```{r save GEA GF random v2, include=FALSE}
 #save(Run_GEA_GF_random_same_AF_V2,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/GF/RUNs/Run_GEA_GF_random_same_AF_V2.Rdata")
 ```
 
 - Model with all outliers SNPs:
-```{r GEA using gradient forest all snps}
-Run_GEA_GF_all_outliers <- gradientForest(data.frame(past_climatic[,vars],genomic_matrix[unique_outliers]), 
-                             predictor.vars=vars, 
-                             response.vars=colnames(genomic_matrix[unique_outliers]),
-                            corr.threshold=0.5, ntree=500, trace=T)
+```{r GEA using gradient forest all outliers snps}
+#Run_GEA_GF_all_outliers <- gradientForest(data.frame(past_climatic[,vars],genomic_matrix[unique_outliers]), 
+#                             predictor.vars=vars, 
+#                             response.vars=colnames(genomic_matrix[unique_outliers]),
+#                            corr.threshold=0.5, ntree=500, trace=T)
 
-length(Run_GEA_GF_all_outliers$result)
+#length(Run_GEA_GF_all_outliers$result)
 ```
 
-```{r save GEA GF random, include=FALSE}
+```{r save GEA GF all outliers, include=FALSE}
 #save(Run_GEA_GF_all_outliers,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/GF/RUNs/Run_GEA_GF_all_outliers.Rdata")
 ```
 
@@ -183,7 +186,6 @@ length(Run_GEA_GF_all_outliers$result)
 ```
 
 ```{r load GEA GF}
-
 list_model <- c("all","random","random_same_AF","LC","MC","CG","random_same_AF_V2","all_outliers")
 
 for(i in 1:length(list_model)){
@@ -194,11 +196,11 @@ load(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_
 }
 ```
 
-Example LC set:  We can see that 83 out of the 98 outliers are associated with some of the predictors. These 83 SNPs will be used by Gradient Forest (GF) in the next step to estimate the genomic offset.  
+Example LC set:  We can see that 83 of the 98 outliers are associated with some of the predictors. The next step is to use these 83 SNPs in Gradient Forest (GF) to estimate the genomic offset 
 
 # Interpolate/extrapolate the GEA relationship and calculate genomic offset
       
-Now that we have our GEA models, we can interpolate/extrapolate the relationship across space and time to estimate the past and future genomic composition for calculating the genomic offset metric. To do this, we modified the function from Matthew C. Fitzpatrick (github: https://github.com/fitzLab-AL/geneticOffsetR/blob/main/poplarGBS.gf.supportFunctions.R). 
+Now that we have our GEA models, we can use interpolation and extrapolation to estimate the past and future genomic composition and calculate the genomic offset metric by relating the models to space and time. To achieve this, we adapted the function created by Matthew C. Fitzpatrick (GitHub: https://github.com/fitzLab-AL/geneticOffsetR/blob/main/poplarGBS.gf.supportFunctions.R). 
       
 ## Function
 
@@ -233,7 +235,6 @@ list_period <- c("present", "future")
 for(i in 1: length(list_period)){
   
   period <- list_period[i]
-
 
 for(x in 1:length(list_set)){
   GF_run <- get(list_set[x])
@@ -335,11 +336,8 @@ pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_o
 }
 ```
 
-
 ```{r mean GO across 5 GCM}
-
 list_models_clim<- c("GFDL_ESM4","IPSL_CM6A_LR","MPI_ESM1_2_HR","MRI_ESM2_0","UKESM1_0_LL") 
-
 
 for(x in 1:length(list_set)){
   
@@ -365,17 +363,13 @@ file_save<- get(paste0("GO_T_Adapcon_Gentree_GF_", set, "_future_mean"))
   assign(name,file_save)
   save(list = name,file=paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/GF/data/GCMs_separate/",name,".Rdata"))
 }
-
-
 ```
 
-
 ```{r rank comparison across GCMs}
-
 list_models_clim<- c("mean","GFDL_ESM4","IPSL_CM6A_LR","MPI_ESM1_2_HR","MRI_ESM2_0","UKESM1_0_LL") 
 
 # List of SNP sets
-list_set <- c("all","random","random_same_AF","LC","MC","CG","random_AF_V2","all_outliers")
+list_sets <- c("all","random_same_AF","LC")#"random","MC","CG","random_AF_V2","all_outliers"
 
 # Initialize an empty list to store data for all SNP sets
 plot_data <- list()
@@ -388,10 +382,13 @@ color_palette <- c("#FF69B4","red","blue","orange","black","green")
 
 # Initialize a vector to keep track of top populations across all GCMs
 
+meta_data_pop$pop_abbrev <- c("VIS","BAU","SDF","PAT","CHO","VOU","OLY","ANC","PDT","UMB","VAL","BRA","HAR","GOR","BOM","UNS","BUJA","BUJG","CAR","RAS","SUE","SAV","BLI","HHR","JUR","WAL","CED","RWM","YEW")
+
+meta_data_f <- meta_data_pop[order(meta_data_pop$Population),]
 # Loop over each SNP set
-for (x in 1:length(list_set)) {
+for (x in 1:length(list_sets)) {
   
-  set <- list_set[x]
+  set <- list_sets[x]
   # Initialize an empty data frame for all models in the current SNP set
   ranks_df <- data.frame()
   
@@ -405,18 +402,20 @@ for (x in 1:length(list_set)) {
     GO_data <- get(paste0("GO_T_Adapcon_Gentree_GF_", set, "_future_", model))
     colnames(GO_data) <- c("Population", "GO")
     
+    GO_data_V2 <- merge(GO_data,meta_data_f[,c(1,2,7)],"Population")
+    
     # Rank the populations by genomic offset (highest GO gets rank 1)
-    GO_data$Rank <- rank(-GO_data$GO, ties.method = "first")
+    GO_data_V2$Rank <- rank(-GO_data_V2$GO, ties.method = "first")
     
     # Add columns for the climatic model and SNP set
-    GO_data$Model <- model
-    GO_data$Set <- set
+    GO_data_V2$Model <- model
+    GO_data_V2$Set <- set
     
     # Append to ranks dataframe
-    ranks_df <- rbind(ranks_df, GO_data)
+    ranks_df <- rbind(ranks_df, GO_data_V2)
     
     # Find the top 1 population for the current model (highest GO = rank 1)
-    top_1_population <- GO_data %>% top_n(1, GO) %>% pull(Population)
+    top_1_population <- GO_data_V2 %>% top_n(1, GO) %>% pull(Population)
     
     # Add this top 1 population to the list of all top populations (avoid duplicates)
     all_top_populations <- unique(c(all_top_populations, top_1_population))
@@ -424,7 +423,7 @@ for (x in 1:length(list_set)) {
   
   # Convert 'Model' and 'Set' to factors for plotting
   ranks_df$Model <- factor(ranks_df$Model, levels = list_models_clim)
-  ranks_df$Set <- factor(ranks_df$Set, levels = list_set)
+  ranks_df$Set <- factor(ranks_df$Set, levels = list_sets)
   
   # Adjust the number of colors if there are more top populations than the current color palette
   num_top_populations <- length(all_top_populations)
@@ -444,40 +443,50 @@ for (x in 1:length(list_set)) {
   # Store the data frame for this SNP set in the plot_data list
   plot_data[[set]] <- ranks_df
   
-  # Generate the plot for this SNP set
-  p <- ggplot(ranks_df, aes(x = Model, y = Rank, group = Population, color = Color)) +
-    geom_line(alpha = 0.7, size = 0.8) +
-    geom_point(size = 2) +
-    scale_y_reverse() +  # Reverse rank (1 = top)
-    scale_color_identity() +  # Use the color as is (no color scale)
-    labs(
-      title = paste("GF Rank Variability for SNP Set:", set),
-      x = "Climatic Models", y = "Population Rank"
-    ) +
-    theme_minimal() +
-    theme(
-      legend.position = "none",  # Remove population legend
-      panel.grid.minor = element_blank(),
-      strip.text = element_text(size = 10, face = "bold"),
-      legend.title = element_text(size = 10)
-    )
-  
-  print(p)  # Display plot for this SNP set
-  
+# Modify the plot generation code
+p <- ggplot(ranks_df, aes(x = Model, y = Rank, group = Population)) +
+  geom_line(aes(color = Highlight), alpha = 0.7, size = 0.8) +  # Color only top populations
+  geom_point(aes(color = Highlight), size = 2) +  # Color only top populations
+  geom_text(
+    data = ranks_df %>% filter(Model == list_models_clim[1]),  # Label only in first column
+    aes(label = meta_data_f$pop_abbrev[match(Population, meta_data_f$Population)]),
+    hjust = 1,  # Align to the left
+    vjust = 0,  
+    size = 3.8,   # Increase text size
+    nudge_x = -0.25,
+    fontface= "italic"
+    # Move text further left
+  ) +
+  scale_y_reverse() +  # Reverse rank (1 = top)
+  scale_color_manual(values = c(population_colors, "Other" = "grey")) +  # Keep top populations colored, others grey
+  labs(
+    title = paste("GF Rank Variability for SNP Set:", set),
+    x = "Climatic Models", y = "Population Rank"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",  
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(size = 10, face = "bold"),
+    legend.title = element_text(size = 10),
+              axis.title.x = element_text(size = 14),
+              axis.title.y = element_text(size = 14),
+              axis.text.x = element_text(size = 10),
+              axis.text.y = element_text(size = 12),
+              legend.text = element_text(size = 12)
+  )
+
+print(p)  # Display plot for this SNP set
   #save
      pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/GF/figures/comparison/GCMs/GO_rank_comparison_",set,".pdf"));print(p);dev.off()
-  
 }
 ```
 
 We are going to use the mean of the GO predictions across the 5 GCMs as future GO
 
-
-
 ## Graphical representations
 
 ```{r plot genomic offset,eval=F, echo=T}
-
 list_models_clim<- c("mean","GFDL_ESM4","IPSL_CM6A_LR","MPI_ESM1_2_HR","MRI_ESM2_0","UKESM1_0_LL") 
 
 list_period <- c("present","future")
@@ -616,7 +625,6 @@ We observed that there is no clear pattern in the genomic offset; it does not co
 
 ```{r correlation GO elevation}
 #load elevation
-
 elevation_data <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_data/ClimateDT_extraction/extraction_climateDT_29pop_T.csv",h=T,sep=";",dec=",")
 
 #merge elevation data with GO
@@ -701,12 +709,7 @@ for(i in 1:length(list_period)){
     }
   }
 }
-
-
-
 ```
-
-
 
 ```{r graph rmarkdown 2, echo=FALSE}
 list_period_rmarkdown <- c("present","future_mean")
@@ -718,7 +721,7 @@ for(i in 1:length(list_period_rmarkdown)){
     set <- list_set_rmarkdown[x]
     set2 <- list_set_rmarkdown[x+1]
     #merge two dataset
-GO_RDA_merge <- merge(GO_df <- get(paste0("genomic_offset_GF_",set,"_",period)),GO_df <- get(paste0("genomic_offset_GF_",set2,"_",period)),"Population")
+GO_RDA_merge <- merge(GO_df <- get(paste0("GO_T_Adapcon_Gentree_GF_",set,"_",period)),GO_df <- get(paste0("GO_T_Adapcon_Gentree_GF_",set2,"_",period)),"Population")
 #df
 GO_RDA_set_df<- data.frame(Population= GO_RDA_merge$Population,GO_RDA_1=GO_RDA_merge[,2],GO_RDA_2=GO_RDA_merge[,3])
 #RDA_GO rank
@@ -766,7 +769,6 @@ df_f_fut <- data.frame(Population = df_fut[,1], Values = df_fut[,2])
 df_f_pres$Period <- "Present"
 df_f_fut$Period <- "Future"
 
-
 #combine them
 df_GO <- rbind(df_f_fut,df_f_pres)
 df_GO$Period <- factor(df_GO$Period, levels = c("Present", "Future"))
@@ -800,8 +802,8 @@ for(i in 1:length(list_set_rmarkdown)){
   set <- list_set_rmarkdown[i]
   period_1 <- c("present")
   period_2 <- c("future_mean")
-  df_pres <- get(paste0("genomic_offset_GF_",set,"_",period_1))
-  df_fut <- get(paste0("genomic_offset_GF_",set,"_",period_2))
+  df_pres <- get(paste0("GO_T_Adapcon_Gentree_GF_",set,"_",period_1))
+  df_fut <- get(paste0("GO_T_Adapcon_Gentree_GF_",set,"_",period_2))
   #df
 df_f_pres <- data.frame(Population = df_pres[,1], Values = df_pres[,2])
 df_f_fut <- data.frame(Population = df_fut[,1], Values = df_fut[,2])
@@ -830,20 +832,4 @@ trend_plot <- ggplot(df_GO, aes(x = Period, y = Values, group = Population)) +
 
 # Global conclusion
 
-We observed that the LC and MC sets are nearly identical; therefore, we will only perform further analyses the analyses on the LC set and not on the MC set.
-
-
-# Draft
-
-Example of GEA method 1 model: 
-```{r GEA using gradient forest MC, eval=FALSE, include=FALSE}
-
-#Run_GEA_GF_MC <- gradientForest(data.frame(past_climatic[,vars],genomic_matrix[outliers_set_final_overlapping_no_LD_new_var]), 
-#                             predictor.vars=vars, response.vars=colnames(genomic_matrix[outliers_set_final_overlapping_no_LD_new_var]),
-#                             corr.threshold=0.5, ntree=500, trace=T)
-
-#length(Run_GEA_GF_MC$result)
-
-#save(Run_GEA_GF_MC,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/GF/RUNs/Run_GEA_GF_MC.Rdata")
-#load("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/GF/RUNs/Run_GEA_GF_MC.Rdata")
-```
+As the LC and MC sets are almost identical, we will only perform further analyses on the LC set.

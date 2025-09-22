@@ -1,0 +1,890 @@
+---
+title: "Comparison_GO_predictions_Taxus_final_resutls"
+author: "Thomas Francisco"
+date: "2024-11-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+rm(list = ls())
+knitr::opts_chunk$set(
+	message = FALSE,
+	warning = FALSE,
+	cache = FALSE
+)
+library(corrplot)
+library(dplyr)
+library(rnaturalearth)
+library(ggplot2)
+library(ggforce)
+library(sf)
+library(ggspatial)
+```
+
+
+The aim of this script is to compare population genomic offset predictions across models and sets of SNPs. It will also produce a map of the genomic offsets described in the paper. 
+```{r meta data}
+meta_data_pop <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Populations/taxus_sample_29pop.csv",h=T,sep=";",dec=",")
+
+#alphabetic order
+meta_data_pop_order <- meta_data_pop[order(meta_data_pop$Population),]
+```
+
+# Data
+```{r load models}
+list_models <- c("all","random_same_AF","LC","random_AF_V2","all_outliers")
+list_period <- c("present","future_mean")
+
+df_present <- list()
+df_future <- list()
+
+# Loop through the models and periods, loading the data and extracting the second column
+for (x in 1:length(list_models)) {
+  name <- list_models[x]
+  
+  for (i in 1:length(list_period)) {
+    period <- list_period[i]
+    
+    # Load RDA data (standard GO)
+    load(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/RDA/data/GO_T_Adapcon_Gentree_RDA_", name, "_", period, ".Rdata"))
+    df <- get(paste0("GO_T_Adapcon_Gentree_RDA_",name, "_", period))
+    temp_df <- data.frame(temp = df[,2]) # Extract the second column
+    colnames(temp_df) <- paste0("RDA_",name) # Rename the column
+    
+    # Append to the corresponding list based on the period
+    if (period == "present") {
+      df_present[[length(df_present) + 1]] <- temp_df
+    } else if (period == "future_mean") {
+      df_future[[length(df_future) + 1]] <- temp_df
+    }
+    
+    
+    # Load GF GO data
+    load(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/GF/data/GCMs_separate/GO_T_Adapcon_Gentree_GF_", name, "_", period, ".Rdata"))
+    df <- get(paste0("GO_T_Adapcon_Gentree_GF_",name, "_", period))
+    temp_df <- data.frame(temp = df[,2]) # Extract the second column
+    colnames(temp_df) <- paste0("GF_",name) # Rename the column
+    
+    if (period == "present") {
+      df_present[[length(df_present) + 1]] <- temp_df
+    } else if (period == "future_mean") {
+      df_future[[length(df_future) + 1]] <- temp_df
+    }
+  }
+}
+
+# Combine all data frames in the lists by column for each period
+df_present_combined <- do.call(cbind, df_present)
+df_present_combined <- df_present_combined[, order(colnames(df_present_combined))]
+
+df_future_combined <- do.call(cbind, df_future)
+df_future_combined <- df_future_combined[, order(colnames(df_future_combined))]
+
+#df_future_combined$Population <- GO_T_Adapcon_Gentree_GF_all_future_mean$Population
+
+# Optionally, save the combined data frames to CSV or RData files
+write.csv(df_present_combined, "present_combined.csv", row.names = FALSE)
+write.csv(df_future_combined, "future_combined.csv", row.names = FALSE)
+
+# Save as RData
+#save(df_present_combined, file = "present_combined.RData")
+#save(df_future_combined, file = "future_combined.RData")
+```
+
+# Pearson correlation
+
+## reduce set paper (random AF, all, outlier)
+
+```{r correlation}
+correlation_present <- cor(df_present_combined)
+correlation_present_order <- correlation_present[c(2,3,1,5,6,4),c(2,3,1,5,6,4)]
+colnames(correlation_present_order) <- c("GF_outlier","GF_random","GF_all","RDA_outlier","RDA_random","RDA_all")
+row.names(correlation_present_order) <- c("GF_outlier","GF_random","GF_all","RDA_outlier","RDA_random","RDA_all")
+
+corrplot(correlation_present_order, method = "number", addrect = 2, col = c("darkorange","darkred"), type = "lower", tl.col = "black", tl.cex = 0.6, number.cex = 0.6)
+
+
+correlation_future <- cor(df_future_combined)
+correlation_future_order <- correlation_future[c(3,5,1,8,10,6),c(3,5,1,8,10,6)]
+colnames(correlation_future_order) <- c("GF_outlier","GF_random","GF_all","RDA_outlier","RDA_random","RDA_all")
+row.names(correlation_future_order) <- c("GF_outlier","GF_random","GF_all","RDA_outlier","RDA_random","RDA_all")
+
+corrplot(correlation_future_order, method = "number", addrect = 2, col = c("darkorange","darkred"), type = "lower", tl.col = "black", tl.cex = 1, number.cex = 1)
+```
+
+```{r save corrplot}
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/comparison/correlation_GO_present_values_GF_RDA_reduce_paper.pdf");corrplot(correlation_present_order, method = "number", addrect = 2, col = c("darkorange","darkred"), type = "lower", tl.col = "black", tl.cex = 0.6, number.cex = 0.6);dev.off()
+
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/comparison/correlation_GO_future_values_GF_RDA_reduce_paper.pdf");corrplot(correlation_future_order, method = "number", addrect = 2, col = c("darkorange","darkred"), type = "lower", tl.col = "black", tl.cex = 1, number.cex = 1);dev.off()
+```
+
+## All the sets 
+
+```{r correlation new models}
+
+correlation_future <- cor(df_future_combined)
+correlation_future_order_allset <- correlation_future[c(1,2,3,4,5,6,7,8,9,10),c(1,2,3,4,5,6,7,8,9,10)]
+correlation_future_order_allset <- correlation_future[c(5,4,1,2,3,10,9,6,7,8),c(5,4,1,2,3,10,9,6,7,8)]
+
+colnames(correlation_future_order_allset) <- c("GF_random","GF_random_2","GF_all","GF_all_outlier","GF_outlier","RDA_random","RDA_random_2","RDA_all","RDA_all_outlier","RDA_outlier")
+row.names(correlation_future_order_allset) <- c("GF_random","GF_random_2","GF_all","GF_all_outlier","GF_outlier","RDA_random","RDA_random_2","RDA_all","RDA_all_outlier","RDA_outlier")
+
+corrplot(correlation_future_order_allset, method = "number", addrect = 2, col = c("darkorange","darkred"), type = "lower", tl.col = "black", tl.cex = 0.6, number.cex = 0.6)
+
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/comparison/correlation_new_modelsV2.pdf");corrplot(correlation_future_order_allset, method = "number", addrect = 2, col = c("darkorange","darkred"), type = "lower", tl.col = "black", tl.cex = 0.6, number.cex = 0.6);dev.off()
+
+```
+
+```{r save corrplot new models}
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/comparison/correlation_GO_future_values_GF_RDA_allsets.pdf");corrplot(correlation_future_order_allset, method = "number", addrect = 2, col = c("darkorange","darkred"), type = "lower", tl.col = "black", tl.cex = 1, number.cex = 1);dev.off()
+```
+
+# Comparison GO rank
+
+```{r rank comparison across GCMs}
+GO_T_Adapcon_Gentree_GF_outlier_future_mean <- GO_T_Adapcon_Gentree_GF_LC_future_mean
+GO_T_Adapcon_Gentree_RDA_outlier_future_mean <- GO_T_Adapcon_Gentree_RDA_LC_future_mean
+
+GO_T_Adapcon_Gentree_GF_random_future_mean <- GO_T_Adapcon_Gentree_GF_random_same_AF_future_mean
+GO_T_Adapcon_Gentree_RDA_random_future_mean <- GO_T_Adapcon_Gentree_RDA_random_same_AF_future_mean
+
+# List of SNP sets
+#list_set <- c("all", "random", "random_same_AF", "LC", "MC", "CG")
+
+list_set <- c("GF_outlier","GF_random","GF_all","RDA_outlier","RDA_random","RDA_all")
+
+# Initialize an empty list to store data for all SNP sets
+plot_data <- list()
+
+# Load the RColorBrewer package for dynamic color palettes
+library(RColorBrewer)
+
+color_palette <- c("#E69F00",  # Orange
+                   "#56B4E9",  # Sky Blue
+                   "#009E73",  # Green
+                   "#F0E442",  # Yellow
+                   "#0072B2",  # Blue
+                   "#D55E00",  # Red
+                   "#CC79A7")  # Pink
+
+
+ranks_df <- data.frame()
+all_top_populations <- character(0)
+
+meta_data_pop$pop_abbrev <- c("VIS","BAU","SDF","PAT","CHO","VOU","OLY","ANC","PDT","UMB","VAL","BRA","HAR","GOR","BOM","UNS","BUJA","BUJG","CAR","RAS","SUE","SAV","BLI","HHR","JUR","WAL","CED","RWM","YEW")
+
+meta_data_f <- meta_data_pop[order(meta_data_pop$Population),]
+
+# Loop over each climatic model
+for (i in 1:length(list_set)) {
+  
+  set <- list_set[i]
+  # Get the genomic offset data for the current SNP set and model
+  GO_data <- get(paste0("GO_T_Adapcon_Gentree_", set, "_future_mean"))
+  colnames(GO_data) <- c("Population", "GO")
+  
+  # Rank the populations by genomic offset (highest GO gets rank 1)
+  GO_data$Rank <- rank(-GO_data$GO, ties.method = "first")
+  
+  # Add columns for the climatic model and SNP set
+  GO_data$Set <- set
+  
+  # Append to ranks dataframe
+  ranks_df <- rbind(ranks_df, GO_data)
+  
+  # Find the top (rank 1) and bottom (rank 29) populations
+  top_population <- GO_data %>% filter(Rank == 1) %>% pull(Population)
+  #bottom_population <- GO_data %>% filter(Rank == max(GO_data$Rank)) %>% pull(Population)
+  
+  # Store unique top and bottom populations
+  all_top_populations <- unique(c(all_top_populations, top_population))#bottom_population
+}
+
+# Adjust the number of colors if needed
+num_top_populations <- length(all_top_populations)
+if (num_top_populations > length(color_palette)) {
+  color_palette <- colorRampPalette(brewer.pal(9, "Set1"))(num_top_populations)
+}
+
+# Assign a unique color to each of the selected populations (both top and bottom)
+population_colors <- setNames(color_palette[1:num_top_populations], all_top_populations)
+
+# Create a new column to store color assignments (highlight only rank 1 and rank 29 populations)
+ranks_df$Highlight <- ifelse(ranks_df$Population %in% all_top_populations, ranks_df$Population, "Other")
+
+# Map colors for top & bottom populations and grey for the rest
+ranks_df$Color <- ifelse(ranks_df$Highlight == "Other", "grey", population_colors[ranks_df$Highlight])
+
+# Store the data frame for this SNP set in the plot_data list
+plot_data[[set]] <- ranks_df
+
+# Generate the plot for this SNP set
+p <- ggplot(ranks_df, aes(x = Set, y = Rank, group = Population, color = Color)) +
+  geom_line(alpha = 0.8, size = 1.25) +
+  geom_point(size = 2) +
+  geom_text(
+    data = ranks_df %>% filter(Set == list_set[5]),  # Label only in first column
+    aes(label = meta_data_f$pop_abbrev[match(Population, meta_data_f$Population)]),
+    hjust = 1,  # Align to the left
+    vjust = 0,  
+    size = 3.8,   # Increase text size
+    nudge_x = +0.50,
+    fontface= "italic",color="black"
+    # Move text further left
+  ) +
+  scale_y_reverse() +  # Reverse rank (1 = top)
+  scale_color_identity() +  # Use assigned colors
+  labs(
+    title = "Comparison Genomic Offset Predictions Across Models",
+    x = "Genomic Offset Models", y = "Population Rank"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",  
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(size = 10, face = "bold"),
+    legend.title = element_text(size = 10),
+              axis.title.x = element_text(size = 14),
+              axis.title.y = element_text(size = 14),
+              axis.text.x = element_text(size = 10),
+              axis.text.y = element_text(size = 12),
+              legend.text = element_text(size = 12)
+  )
+
+print(p)  # Display plot
+
+#save
+    pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/comparison/GO_rank_comparison_across_models.pdf"));print(p);dev.off()
+
+```
+
+## Including bottom populations
+
+```{r rank including bottom pop}
+color_palette <- c("#E69F00",  # Orange
+                   "#56B4E9",  # Sky Blue
+                   "#009E73",  # Green
+                   "#F0E442",  # Yellow
+                   "#0072B2",  # Blue
+                   "#D55E00",  # Red
+                   "#CC79A7")  # Pink
+
+color_palette <- c("#0072B2","#CC79A7")  # Orange
+
+
+ranks_df <- data.frame()
+all_top_populations <- character(0)
+
+# Loop over each climatic model
+for (i in 1:length(list_set)) {
+  
+  set <- list_set[i]
+  # Get the genomic offset data for the current SNP set and model
+  GO_data <- get(paste0("GO_T_Adapcon_Gentree_", set, "_future_mean"))
+  colnames(GO_data) <- c("Population", "GO")
+  
+  # Rank the populations by genomic offset (highest GO gets rank 1)
+  GO_data$Rank <- rank(-GO_data$GO, ties.method = "first")
+  
+  # Add columns for the climatic model and SNP set
+  GO_data$Set <- set
+  
+  # Append to ranks dataframe
+  ranks_df <- rbind(ranks_df, GO_data)
+  
+  # Find the top (rank 1) and bottom (rank 29) populations
+  top_population <- GO_data %>% filter(Rank == 1) %>% pull(Population)
+  bottom_population <- GO_data %>% filter(Rank == max(GO_data$Rank)) %>% pull(Population)
+  
+  # Store unique top and bottom populations
+  all_top_populations <- unique(c(all_top_populations, top_population, bottom_population))
+}
+
+# Adjust the number of colors if needed
+num_top_populations <- length(bottom_population)
+if (num_top_populations > length(color_palette)) {
+  color_palette <- colorRampPalette(brewer.pal(9, "Set1"))(num_top_populations)
+}
+#Castle_Eden_Dene
+# Assign a unique color to each of the selected populations (both top and bottom)
+keep_pop <- c("Castle_Eden_Dene","Hornli-Hulftegg-Roten")
+
+population_colors <- setNames(color_palette[1:2], keep_pop)
+
+# Create a new column to store color assignments (highlight only rank 1 and rank 29 populations)
+ranks_df$Highlight <- ifelse(ranks_df$Population %in% keep_pop, ranks_df$Population, "Other")
+
+# Map colors for top & bottom populations and grey for the rest
+ranks_df$Color <- ifelse(ranks_df$Highlight == "Other", "grey", population_colors[ranks_df$Highlight])
+
+# Store the data frame for this SNP set in the plot_data list
+plot_data[[set]] <- ranks_df
+
+# Generate the plot for this SNP set
+p <- ggplot(ranks_df, aes(x = Set, y = Rank, group = Population, color = Color)) +
+  geom_line(alpha = 0.8, size = 1.25) +
+  geom_point(size = 2) +
+  scale_y_reverse() +  # Reverse rank (1 = top)
+  scale_color_identity() +  # Use assigned colors
+  labs(
+    title = paste("RDA Rank Variability for SNP Set:", set),
+    x = "Climatic Models", y = "Population Rank"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",  # Remove legend
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(size = 10, face = "bold"),
+    legend.title = element_text(size = 10)
+  )
+
+print(p)  # Display plot
+
+#save
+     pdf(paste0("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/comparison/GO_rank_similarity.pdf"));print(p);dev.off()
+```
+
+
+# GO map
+
+## Map biplot without low trust
+
+Based on the evaluation of the predictions using phenotypic data, we concluded that GF and RDA predictions using a set of loci with random same-allele frequencies should be used to predict genomic offset. Only predictions for populations where the two methods agree would be interpreted. 
+
+```{r data combined}
+df_two_GO <- data.frame(Population=GO_T_Adapcon_Gentree_GF_all_future_mean[,1],df_future_combined[,c(3,6)])
+
+df_two_GO_outliers <- data.frame(Population=GO_T_Adapcon_Gentree_GF_all_future_mean[,1],df_future_combined[,c(3,8)])
+df_two_GO_random_same_AF <- data.frame(Population=GO_T_Adapcon_Gentree_GF_all_future_mean[,1],df_future_combined[,c(5,10)])
+df_two_GO_random_same_AFV2 <- data.frame(Population=GO_T_Adapcon_Gentree_GF_all_future_mean[,1],df_future_combined[,c(4,9)])
+df_two_GO_all_outliers <- data.frame(Population=GO_T_Adapcon_Gentree_GF_all_future_mean[,1],df_future_combined[,c(2,7)])
+```
+
+We can plot the two GO for each population using two different colors:
+
+```{r combined map GO}
+list_df_combined <- c("df_two_GO_outliers","df_two_GO_random_same_AF","df_two_GO_random_same_AFV2","df_two_GO_all_outliers")
+list_names <- c("outlier","random_AF","random_AF2","all_outliers")
+
+for(x in 1:length(list_df_combined)){
+  
+  df <- get(list_df_combined[x])
+  name <- list_names[x]
+Genomic_offset_combined <- merge(df,meta_data_pop_order[,c(2,4,5)],"Population")
+# DataFrame containing GO values for two models (RDA and GF)
+   colnames(Genomic_offset_combined) <- c("Population", "GO_GF", "GO_RDA","Latitude", "Longitude")
+    
+    # Convert Longitude and Latitude to numeric
+    Genomic_offset_combined <- Genomic_offset_combined %>%
+      mutate(Longitude = as.numeric(Longitude), Latitude = as.numeric(Latitude))
+    
+ colors <- c("darkgreen", "#FDF7B3", "#FC4E2A", "#BD0026", "darkorchid4")
+admin <- ne_countries(scale = "medium", returnclass = "sf")
+
+#scale the values to have comparable classes
+#cut_interval
+
+Genomic_offset_combined$scaled_GO_RDA <- (Genomic_offset_combined$GO_RDA-min(Genomic_offset_combined$GO_RDA))/(max(Genomic_offset_combined$GO_RDA)-min(Genomic_offset_combined$GO_RDA))
+
+# Create interval categories for `GO_GF` and `GO_RDA`
+Genomic_offset_combined <- Genomic_offset_combined %>%
+  mutate(GO_GF_interval = cut_interval(GO_GF, n = 5, labels = FALSE),
+         GO_RDA_interval = cut_interval(GO_RDA, n = 5, labels = FALSE))
+
+# Convert intervals to factor for consistent color mapping
+Genomic_offset_combined$GO_GF_interval <- as.factor(Genomic_offset_combined$GO_GF_interval)
+Genomic_offset_combined$GO_RDA_interval <- as.factor(Genomic_offset_combined$GO_RDA_interval)
+
+# Plot with vertical split for the half-circles
+plot <- ggplot(data = Genomic_offset_combined) + 
+  geom_sf(data = admin, fill = gray(0.92), size = 0) +
+  geom_sf(data = admin, fill = NA, size = 0.1) +
+  coord_sf(xlim = c(-10, 30), ylim = c(35, 62), expand = FALSE) +
+  # Create half-circle markers with a vertical split by rotating the start and end angles
+  geom_arc_bar(aes(
+    x0 = Longitude, y0 = Latitude, r0 = 0, r = 0.5,
+    start = -pi/2, end = pi/2, fill = GO_GF_interval  # Left half for GO_GF
+  ), color = "black", data = Genomic_offset_combined) +
+  geom_arc_bar(aes(
+    x0 = Longitude, y0 = Latitude, r0 = 0, r = 0.5,
+    start = pi/2, end = 3 * pi/2, fill = GO_RDA_interval  # Right half for GO_RDA
+  ), color = "black", data = Genomic_offset_combined) +
+  
+  # Set fill colors and map details for intervals
+  scale_fill_manual(
+    values = colors,
+    labels = c("low values", "", "", "", "high values"),
+    drop = FALSE, na.translate = FALSE
+  ) +
+  xlab("Longitude") + ylab("Latitude") +
+  ggtitle("Genomic offset across populations") +
+  theme_bw(base_size = 11) +
+  theme(
+    legend.position = "right", panel.grid = element_blank(),
+    strip.text = element_text(size = 11),
+    plot.title = element_text(hjust = 0.5, color = "Black", face = "italic")
+  )
+
+# Print the plot
+print(plot)
+
+assign(paste0("Genomic_offset_combined_",name),Genomic_offset_combined)
+
+}
+#pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Final_figures/GO_RDA_across_populations.pdf");print(plot);dev.off()
+```
+
+## Indicating low trust population
+
+Based on these results, we decided to remove the populations for which predictions were inconsistent across methods, and to calculate the elevation relationship using only the GF predictions (as GF was more strongly associated with fitness than RDA).
+
+Plot of GO highlighting the populations we are less trusting of.
+
+### At least two categorical of difference for random same AF 
+
+Bohinj_Obrne_Mokri_Log, Fonte tassete Prati, Rascafria, Sainte baume and Serra di fiurmaba
+
+```{r  at least 2}
+for(x in 1:length(list_names)){
+  
+  df <- get(paste0("Genomic_offset_combined_",list_names[x]))
+  
+  Genomic_offset_combined_MC <- df[-c(9,19,21,22,23),]
+Genomic_offset_combined_MC_elev <- merge(Genomic_offset_combined_MC,meta_data_pop_order[,c(2,6)],"Population")
+Genomic_offset_combined_MC_elev$Elevation.DEM_90m.<- as.numeric(Genomic_offset_combined_MC_elev$Elevation.DEM_90m.)
+Genomic_offset_combined_MC_elev$Latitude<- as.numeric(Genomic_offset_combined_MC_elev$Latitude)
+
+cor(Genomic_offset_combined_MC_elev$GO_GF,Genomic_offset_combined_MC_elev$Latitude)
+}
+
+Genomic_offset_combined_random_AF
+
+removed_pop <- c("Fonte_tassete_Prati_di_Tivo","Rascafria","Sainte_Baume","Saro_Vasterskog","Serra_di_Fiumorbu")
+
+Genomic_offset_combined_randomAF_elev <- merge(Genomic_offset_combined_random_AF,meta_data_pop_order[,c(2,6)],"Population")
+Genomic_offset_combined_randomAF_elev$Elevation.DEM_90m.<- as.numeric(Genomic_offset_combined_randomAF_elev$Elevation.DEM_90m.)
+Genomic_offset_combined_randomAF_elev$Latitude<- as.numeric(Genomic_offset_combined_randomAF_elev$Latitude)
+
+Genomic_offset_combined_randomAF_elev_reduce <- Genomic_offset_combined_randomAF_elev[-c(9,19,21,22,23),]
+cor(Genomic_offset_combined_randomAF_elev_reduce$GO_GF,Genomic_offset_combined_randomAF_elev_reduce$Elevation.DEM_90m.)
+cor(Genomic_offset_combined_randomAF_elev_reduce$GO_RDA,Genomic_offset_combined_randomAF_elev_reduce$Elevation.DEM_90m.)
+
+Genomic_offset_combined_randomAF_elev_reduce <- Genomic_offset_combined_randomAF_elev_reduce %>%
+  mutate(mean_values = (GO_GF + GO_RDA) / 2)
+
+cor(Genomic_offset_combined_randomAF_elev_reduce$mean_values,Genomic_offset_combined_randomAF_elev_reduce$Elevation.DEM_90m.)
+cor(Genomic_offset_combined_randomAF_elev_reduce$mean_values,Genomic_offset_combined_randomAF_elev_reduce$Latitude)
+
+s <- cor.test(Genomic_offset_combined_randomAF_elev_reduce$mean_values,Genomic_offset_combined_randomAF_elev_reduce$Elevation.DEM_90m.)
+s$p.value
+
+s <- cor.test(Genomic_offset_combined_randomAF_elev_reduce$mean_values,Genomic_offset_combined_randomAF_elev_reduce$Latitude)
+s$p.value
+
+Genomic_offset_combined_randomAF_elev_reduce$pop_abbrev <- c("ANC","BLI","BOM","BRA","BUJA","BUJG","CAR","CED","UMB","GOR","HAR","HHR","JUR","CHO","OLY","VOU","PAT","RWM","SUE","UNS","VAL","VIS","WAL","YEW")
+
+#plot 
+plot_elevation <- ggplot(data=Genomic_offset_combined_randomAF_elev_reduce, aes(x=Elevation.DEM_90m.,y=mean_values))+
+  geom_point(aes(size=Latitude)) + 
+  geom_text(label=Genomic_offset_combined_randomAF_elev_reduce$pop_abbrev,vjust=1.8)
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Elevation_Latitude_gradients/plot_GO_elevation.pdf");print(plot_elevation);dev.off()
+
+  plot_elevation
+  
+plot_latitude <- ggplot(data=Genomic_offset_combined_randomAF_elev_reduce, aes(x=Latitude,y=mean_values))+
+  geom_point()+
+   geom_text(label=Genomic_offset_combined_randomAF_elev_reduce$pop_abbrev,vjust=1.3)
+
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Elevation_Latitude_gradients/plot_GO_latitude.pdf");print(plot_latitude);dev.off()
+
+  plot_latitude
+  
+  #cor GO per method
+cor(Genomic_offset_combined_randomAF_elev_reduce$GO_RDA,Genomic_offset_combined_randomAF_elev_reduce$Latitude)
+cor(Genomic_offset_combined_randomAF_elev_reduce$GO_GF,Genomic_offset_combined_randomAF_elev_reduce$Latitude)
+
+#all outliers
+Genomic_offset_combined_alloutliers_elev <-merge(Genomic_offset_combined_all_outliers,meta_data_pop_order[,c(2,6)],"Population")
+Genomic_offset_combined_alloutliers_elev$Elevation.DEM_90m.<- as.numeric(Genomic_offset_combined_alloutliers_elev$Elevation.DEM_90m.)
+
+Genomic_offset_combined_allout_elev_reduce <- Genomic_offset_combined_alloutliers_elev[-c(3,21),]
+cor(Genomic_offset_combined_allout_elev_reduce$GO_GF,Genomic_offset_combined_allout_elev_reduce$Elevation.DEM_90m.)
+cor(Genomic_offset_combined_allout_elev_reduce$GO_RDA,Genomic_offset_combined_allout_elev_reduce$Elevation.DEM_90m.)
+
+cor(Genomic_offset_combined_allout_elev_reduce$GO_GF,Genomic_offset_combined_allout_elev_reduce$Latitude)
+cor(Genomic_offset_combined_allout_elev_reduce$GO_RDA,Genomic_offset_combined_allout_elev_reduce$Latitude)
+```
+
+GOOD FIGURE
+
+### Combined random AF
+
+```{r GOOD FIGURE random AF}
+
+removed_pop <- c("Fonte_tassete_Prati_di_Tivo","Rascafria","Sainte_Baume","Saro_Vasterskog","Serra_di_Fiumorbu")
+shapefile <- st_read("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/shapefiles/Taxus_baccata_plg_clip.shp")
+
+library(colorBlindness)
+
+colors <- c("darkgreen","lightgreen","#FDF7B3", 
+            "#FC4E2A","red")
+colors <- c("#004CFF","#00E5FF","#FFFF80","#FFAA00","#FF0000")
+colors <- c("darkgreen","lightgreen","#FFFF80","#FFAA00","#FF0000")
+
+colors <- c("#290AD8","#AAF7FF","#FFFFBF","#F76D5E","#FF0000")
+colors <- c("#005000","#85B22C","#FFFFBF","#F76D5E","#E51932")
+#colors <- c("#005000","#85B22C","#ffff6d","#F76D5E","#E51932")
+
+#standardised 
+ Genomic_offset_combined_random_AF$scaled_GO_RDA <- (Genomic_offset_combined_random_AF$GO_RDA-min(Genomic_offset_combined_random_AF$GO_RDA))/(max(Genomic_offset_combined_random_AF$GO_RDA)-min(Genomic_offset_combined_random_AF$GO_RDA))
+ 
+  Genomic_offset_combined_random_AF$scaled_GO_GF <- (Genomic_offset_combined_random_AF$GO_GF-min(Genomic_offset_combined_random_AF$GO_GF))/(max(Genomic_offset_combined_random_AF$GO_GF)-min(Genomic_offset_combined_random_AF$GO_GF))
+ 
+plot <- ggplot(data = Genomic_offset_combined_random_AF) + 
+  geom_sf(data = admin, fill = gray(0.92), size = 0) +
+  geom_sf(data = admin, fill = NA, size = 0.1) +
+  geom_sf(data = shapefile, fill = "lightgrey", color = "black", size = 0.2) +  # Adding shapefile
+  coord_sf(xlim = c(-10, 30), ylim = c(35, 62), expand = FALSE) +
+  # Plot half-circles as usual for the genomic offsets
+  geom_arc_bar(aes(
+    x0 = Longitude, y0 = Latitude, r0 = 0, r = 0.5,
+    start = -pi/2, end = pi/2, fill = GO_GF_interval
+  ), color = "black", data = Genomic_offset_combined_random_AF) +
+  
+  geom_arc_bar(aes(
+    x0 = Longitude, y0 = Latitude, r0 = 0, r = 0.5,
+    start = pi/2, end = 3 * pi/2, fill = GO_RDA_interval
+  ), color = "black", data = Genomic_offset_combined_random_AF) +
+  
+  # Add asterisk (*) slightly to the left of the circle for low-trust populations
+  geom_text(
+    data = Genomic_offset_combined_random_AF %>% filter(Population %in% removed_pop),
+    aes(x = Longitude + 0.75, y = Latitude+0.3, label = "*"),  # Adjust the offset value as needed
+    color = "red", size = 7.5, fontface = "bold"
+  ) +
+
+  # Color scale and other plot details
+  scale_fill_manual(
+    name = NULL,  # Removes the legend title
+    values = colors,
+    labels = c("0", "", "0.5", "", "1"),
+    drop = FALSE, na.translate = FALSE
+  ) +
+  annotate("text", x = Inf, y = Inf, label = "* Low-trust predictions", 
+           hjust = 1.2, vjust = 2, color = "red", size = 3.5, fontface = "bold") +
+  xlab("Longitude") + ylab("Latitude") +
+  ggtitle("Genomic offset across populations") +
+  annotation_scale(location = "br", width_hint = 0.3) + # Scale bar at bottom left
+  annotation_north_arrow(location = "tl", which_north = "true", 
+                         pad_x = unit(-0.2, "cm"), pad_y = unit(0.08, "cm"),
+                         style = north_arrow_fancy_orienteering) + # Compass rose
+  theme_bw(base_size = 11) +
+  theme(
+    legend.position = "right", panel.grid = element_blank(),
+    strip.text = element_text(size = 11),
+    plot.title = element_text(hjust = 0.5, color = "Black", face = "italic")
+  )
+
+print(plot)
+
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Final_figures/GO_map_final_highli_bad_predict_new_colorsV2.pdf");print(plot);dev.off()
+```
+
+```{r GOOD FIGURE random AF bis}
+
+removed_pop <- c("Fonte_tassete_Prati_di_Tivo","Rascafria","Sainte_Baume","Saro_Vasterskog","Serra_di_Fiumorbu")
+shapefile <- st_read("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/shapefiles/Taxus_baccata_plg_clip.shp")
+ colors <- c("darkgreen", "#FDF7B3", "#FC4E2A", "#BD0026", "darkorchid4")
+ colors <- c("#005000","#85B22C","#FFFFBF","#F76D5E","#E51932")
+
+plot <- ggplot(data = Genomic_offset_combined_random_AF) + 
+  geom_sf(data = admin, fill = gray(0.92), size = 0) +
+  geom_sf(data = admin, fill = NA, size = 0.1) +
+  geom_sf(data = shapefile, fill = "lightgrey", color = "black", size = 0.2) +  # Adding shapefile
+  coord_sf(xlim = c(-10, 30), ylim = c(35, 62), expand = FALSE) +
+  # Plot half-circles as usual for the genomic offsets
+  geom_arc_bar(aes(
+    x0 = Longitude, y0 = Latitude, r0 = 0, r = 0.5,
+    start = -pi/2, end = pi/2, fill = scaled_GO_GF  # Ensure it's numeric
+  ), color = "black", data = Genomic_offset_combined_random_AF) +
+  
+  geom_arc_bar(aes(
+    x0 = Longitude, y0 = Latitude, r0 = 0, r = 0.5,
+    start = pi/2, end = 3 * pi/2, fill = scaled_GO_RDA  # Ensure it's numeric
+  ), color = "black", data = Genomic_offset_combined_random_AF) +
+  
+  # Add asterisk (*) slightly to the left of the circle for low-trust populations
+  geom_text(
+    data = Genomic_offset_combined_random_AF %>% filter(Population %in% removed_pop),
+    aes(x = Longitude + 0.75, y = Latitude + 0.3, label = "*"),  # Adjust the offset value as needed
+    color = "red", size = 7.5, fontface = "bold"
+  ) +
+
+  # Color gradient scale with more pronounced red for higher values
+  scale_fill_gradient(
+    name = NULL,  # Removes the legend title
+    low = "yellow", high = "red", 
+    limits = c(0, 1),  # Explicitly set the range to enhance contrast
+    labels = c("0", "", "0.5", "", "1"),
+    na.value = "gray", guide = guide_colorbar(title = "Genomic Offset")
+  ) +
+  annotate("text", x = Inf, y = Inf, label = "* Low-trust predictions", 
+           hjust = 1.2, vjust = 2, color = "red", size = 3.5, fontface = "bold") +
+  xlab("Longitude") + ylab("Latitude") +
+  ggtitle("Genomic offset across populations") +
+  annotation_scale(location = "br", width_hint = 0.3) + # Scale bar at bottom left
+  annotation_north_arrow(location = "tl", which_north = "true", 
+                         pad_x = unit(-0.2, "cm"), pad_y = unit(0.08, "cm"),
+                         style = north_arrow_fancy_orienteering) + # Compass rose
+  theme_bw(base_size = 11) +
+  theme(
+    legend.position = "right", panel.grid = element_blank(),
+    strip.text = element_text(size = 11),
+    plot.title = element_text(hjust = 0.5, color = "Black", face = "italic")
+  )
+
+print(plot)
+
+#pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Final_figures/GO_map_final_highli_bad_predict.pdf");print(plot);dev.off()
+```
+
+
+## Combined random AF V2
+
+```{r GOOD FIGURE random AF v2}
+
+removed_pop <- c("Fonte_tassete_Prati_di_Tivo","Rascafria","Sainte_Baume")
+shapefile <- st_read("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/shapefiles/Taxus_baccata_plg_clip.shp")
+colors <- c("#005000","#85B22C","#FFFFBF","#F76D5E","#E51932")
+colors <- c("#005000","#85B22C","#FFFFBF","#F76D5E","#E51932")
+
+
+Genomic_offset_combined_random_AF2$scaled_GO_RDA <- (Genomic_offset_combined_random_AF2$GO_RDA-min(Genomic_offset_combined_random_AF2$GO_RDA))/(max(Genomic_offset_combined_random_AF2$GO_RDA)-min(Genomic_offset_combined_random_AF2$GO_RDA))
+ 
+  Genomic_offset_combined_random_AF2$scaled_GO_GF <- (Genomic_offset_combined_random_AF2$GO_GF-min(Genomic_offset_combined_random_AF2$GO_GF))/(max(Genomic_offset_combined_random_AF2$GO_GF)-min(Genomic_offset_combined_random_AF2$GO_GF))
+
+plot <- ggplot(data = Genomic_offset_combined_random_AF2) + 
+  geom_sf(data = admin, fill = gray(0.92), size = 0) +
+  geom_sf(data = admin, fill = NA, size = 0.1) +
+  geom_sf(data = shapefile, fill = "lightgrey", color = "black", size = 0.2) +  # Adding shapefile
+  coord_sf(xlim = c(-10, 30), ylim = c(35, 62), expand = FALSE) +
+  # Plot half-circles as usual for the genomic offsets
+  geom_arc_bar(aes(
+    x0 = Longitude, y0 = Latitude, r0 = 0, r = 0.5,
+    start = -pi/2, end = pi/2, fill = GO_GF_interval
+  ), color = "black", data = Genomic_offset_combined_random_AF2) +
+  
+  geom_arc_bar(aes(
+    x0 = Longitude, y0 = Latitude, r0 = 0, r = 0.5,
+    start = pi/2, end = 3 * pi/2, fill = GO_RDA_interval
+  ), color = "black", data = Genomic_offset_combined_random_AF2) +
+  
+  # Add asterisk (*) slightly to the left of the circle for low-trust populations
+  geom_text(
+    data = Genomic_offset_combined_random_AF2 %>% filter(Population %in% removed_pop),
+    aes(x = Longitude + 0.75, y = Latitude+0.3, label = "*"),  # Adjust the offset value as needed
+    color = "red", size = 7.5, fontface = "bold"
+  ) +
+
+  # Color scale and other plot details
+  scale_fill_manual(
+    name = NULL,  # Removes the legend title
+    values = colors,
+    labels = c("0", "", "0.5", "", "1"),
+    drop = FALSE, na.translate = FALSE
+  ) +
+  annotate("text", x = Inf, y = Inf, label = "* Low-trust predictions", 
+           hjust = 1.2, vjust = 2, color = "red", size = 3.5, fontface = "bold") +
+  xlab("Longitude") + ylab("Latitude") +
+  ggtitle("Genomic offset across populations") +
+  annotation_scale(location = "br", width_hint = 0.3) + # Scale bar at bottom left
+  annotation_north_arrow(location = "tl", which_north = "true", 
+                         pad_x = unit(-0.2, "cm"), pad_y = unit(0.08, "cm"),
+                         style = north_arrow_fancy_orienteering) + # Compass rose
+  theme_bw(base_size = 11) +
+  theme(
+    legend.position = "right", panel.grid = element_blank(),
+    strip.text = element_text(size = 11),
+    plot.title = element_text(hjust = 0.5, color = "Black", face = "italic")
+  )
+
+print(plot)
+
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Final_figures/GO_map_final_highli_bad_predict_randomV2_new_colors.pdf");print(plot);dev.off()
+```
+
+## Combined outliers
+
+```{r GOOD FIGURE outliers}
+
+removed_pop <- c("Bohinj_Obrne_Mokri_Log","Bujaruelo-ADAPCON","Bujaruelo-GENTREE-1","Cardo","Jura","Mt_Vourinos","Sainte_Baume","Unska_kolisevka","Valditacca","Wallis")
+shapefile <- st_read("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/shapefiles/Taxus_baccata_plg_clip.shp")
+colors <- c("#005000","#85B22C","#FFFFBF","#F76D5E","#E51932")
+
+Genomic_offset_combined_outlier$scaled_GO_RDA <- (Genomic_offset_combined_outlier$GO_RDA-min(Genomic_offset_combined_outlier$GO_RDA))/(max(Genomic_offset_combined_outlier$GO_RDA)-min(Genomic_offset_combined_outlier$GO_RDA))
+ 
+  Genomic_offset_combined_outlier$scaled_GO_GF <- (Genomic_offset_combined_outlier$GO_GF-min(Genomic_offset_combined_outlier$GO_GF))/(max(Genomic_offset_combined_outlier$GO_GF)-min(Genomic_offset_combined_outlier$GO_GF))
+
+plot <- ggplot(data = Genomic_offset_combined_outlier) + 
+  geom_sf(data = admin, fill = gray(0.92), size = 0) +
+  geom_sf(data = admin, fill = NA, size = 0.1) +
+  geom_sf(data = shapefile, fill = "lightgrey", color = "black", size = 0.2) +  # Adding shapefile
+  coord_sf(xlim = c(-10, 30), ylim = c(35, 62), expand = FALSE) +
+  # Plot half-circles as usual for the genomic offsets
+  geom_arc_bar(aes(
+    x0 = Longitude, y0 = Latitude, r0 = 0, r = 0.5,
+    start = -pi/2, end = pi/2, fill = GO_GF_interval
+  ), color = "black", data = Genomic_offset_combined_outlier) +
+  
+  geom_arc_bar(aes(
+    x0 = Longitude, y0 = Latitude, r0 = 0, r = 0.5,
+    start = pi/2, end = 3 * pi/2, fill = GO_RDA_interval
+  ), color = "black", data = Genomic_offset_combined_outlier) +
+  
+  # Add asterisk (*) slightly to the left of the circle for low-trust populations
+  geom_text(
+    data = Genomic_offset_combined_outlier %>% filter(Population %in% removed_pop),
+    aes(x = Longitude + 0.75, y = Latitude+0.3, label = "*"),  # Adjust the offset value as needed
+    color = "red", size = 7.5, fontface = "bold"
+  ) +
+
+  # Color scale and other plot details
+  scale_fill_manual(
+    name = NULL,  # Removes the legend title
+    values = colors,
+    labels = c("0", "", "0.5", "", "1"),
+    drop = FALSE, na.translate = FALSE
+  ) +
+  annotate("text", x = Inf, y = Inf, label = "* Low-trust predictions", 
+           hjust = 1.2, vjust = 2, color = "red", size = 3.5, fontface = "bold") +
+  xlab("Longitude") + ylab("Latitude") +
+  ggtitle("Genomic offset across populations") +
+  annotation_scale(location = "br", width_hint = 0.3) + # Scale bar at bottom left
+  annotation_north_arrow(location = "tl", which_north = "true", 
+                         pad_x = unit(-0.2, "cm"), pad_y = unit(0.08, "cm"),
+                         style = north_arrow_fancy_orienteering) + # Compass rose
+  theme_bw(base_size = 11) +
+  theme(
+    legend.position = "right", panel.grid = element_blank(),
+    strip.text = element_text(size = 11),
+    plot.title = element_text(hjust = 0.5, color = "Black", face = "italic")
+  )
+
+print(plot)
+
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Final_figures/GO_map_final_highli_bad_predict_outliers_newcolors.pdf");print(plot);dev.off()
+```
+
+## Combined all outliers
+
+```{r GOOD FIGURE alloutliers}
+
+removed_pop <- c("Bohinj_Obrne_Mokri_Log","Sainte_Baume")
+shapefile <- st_read("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/shapefiles/Taxus_baccata_plg_clip.shp")
+colors <- c("#005000","#85B22C","#FFFFBF","#F76D5E","#E51932")
+
+Genomic_offset_combined_all_outliers$scaled_GO_RDA <- (Genomic_offset_combined_all_outliers$GO_RDA-min(Genomic_offset_combined_all_outliers$GO_RDA))/(max(Genomic_offset_combined_all_outliers$GO_RDA)-min(Genomic_offset_combined_all_outliers$GO_RDA))
+ 
+  Genomic_offset_combined_all_outliers$scaled_GO_GF <- (Genomic_offset_combined_all_outliers$GO_GF-min(Genomic_offset_combined_all_outliers$GO_GF))/(max(Genomic_offset_combined_all_outliers$GO_GF)-min(Genomic_offset_combined_all_outliers$GO_GF))
+
+plot <- ggplot(data = Genomic_offset_combined_all_outliers) + 
+  geom_sf(data = admin, fill = gray(0.92), size = 0) +
+  geom_sf(data = admin, fill = NA, size = 0.1) +
+  geom_sf(data = shapefile, fill = "lightgrey", color = "black", size = 0.2) +  # Adding shapefile
+  coord_sf(xlim = c(-10, 30), ylim = c(35, 62), expand = FALSE) +
+  # Plot half-circles as usual for the genomic offsets
+  geom_arc_bar(aes(
+    x0 = Longitude, y0 = Latitude, r0 = 0, r = 0.5,
+    start = -pi/2, end = pi/2, fill = GO_GF_interval
+  ), color = "black", data = Genomic_offset_combined_all_outliers) +
+  
+  geom_arc_bar(aes(
+    x0 = Longitude, y0 = Latitude, r0 = 0, r = 0.5,
+    start = pi/2, end = 3 * pi/2, fill = GO_RDA_interval
+  ), color = "black", data = Genomic_offset_combined_all_outliers) +
+  
+  # Add asterisk (*) slightly to the left of the circle for low-trust populations
+  geom_text(
+    data = Genomic_offset_combined_all_outliers %>% filter(Population %in% removed_pop),
+    aes(x = Longitude + 0.75, y = Latitude+0.3, label = "*"),  # Adjust the offset value as needed
+    color = "red", size = 7.5, fontface = "bold"
+  ) +
+
+  # Color scale and other plot details
+  scale_fill_manual(
+    name = NULL,  # Removes the legend title
+    values = colors,
+    labels = c("0", "", "0.5", "", "1"),
+    drop = FALSE, na.translate = FALSE
+  ) +
+  annotate("text", x = Inf, y = Inf, label = "* Low-trust predictions", 
+           hjust = 1.2, vjust = 2, color = "red", size = 3.5, fontface = "bold") +
+  xlab("Longitude") + ylab("Latitude") +
+  ggtitle("Genomic offset across populations") +
+  annotation_scale(location = "br", width_hint = 0.3) + # Scale bar at bottom left
+  annotation_north_arrow(location = "tl", which_north = "true", 
+                         pad_x = unit(-0.2, "cm"), pad_y = unit(0.08, "cm"),
+                         style = north_arrow_fancy_orienteering) + # Compass rose
+  theme_bw(base_size = 11) +
+  theme(
+    legend.position = "right", panel.grid = element_blank(),
+    strip.text = element_text(size = 11),
+    plot.title = element_text(hjust = 0.5, color = "Black", face = "italic")
+  )
+
+print(plot)
+
+pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Final_figures/GO_map_final_highli_bad_predict_alloutliers_newcolors.pdf");print(plot);dev.off()
+```
+
+
+DRAFT: Points are more transparent 
+```{r eval=FALSE, include=FALSE}
+plot <- ggplot(data = Genomic_offset_combined) + 
+  geom_sf(data = admin, fill = gray(0.92), size = 0) +
+  
+  # Plot half-circles as usual for the genomic offsets
+  geom_arc_bar(aes(
+    x0 = Longitude, y0 = Latitude, r0 = 0, r = 0.5,
+    start = -pi/2, end = pi/2, fill = GO_GF_interval
+  ), color = "black", data = Genomic_offset_combined) +
+  
+  geom_arc_bar(aes(
+    x0 = Longitude, y0 = Latitude, r0 = 0.5, r = 0.5,
+    start = pi/2, end = 3 * pi/2, fill = GO_RDA_interval
+  ), color = "black", data = Genomic_offset_combined) +
+  
+  # Add asterisk (*) slightly to the left of the circle for low-trust populations
+  geom_text(
+    data = Genomic_offset_combined %>% filter(Population %in% faded_populations),
+    aes(x = Longitude - 0.5, y = Latitude, label = "*"),  # Adjust the offset value as needed
+    color = "red", size = 5, fontface = "bold"
+  ) +
+  
+  # Remove title from scale fill and adjust colors
+  scale_fill_manual(
+    name = NULL,  # Removes the legend title
+    values = colors,
+    labels = c("low values", "", "", "", "high values"),
+    drop = FALSE, na.translate = FALSE
+  ) +
+
+  # Add a custom legend for the asterisk (*) symbol
+  annotate("text", x = Inf, y = Inf, label = "* Low-trust populations", 
+           hjust = 1.2, vjust = 2, color = "red", size = 3.5, fontface = "bold") +
+  
+  # Map details and appearance settings
+  geom_sf(data = admin, fill = NA, size = 0.1) +
+  coord_sf(xlim = c(-10, 30), ylim = c(35, 62), expand = FALSE) +
+  xlab("Longitude") + ylab("Latitude") +
+  ggtitle("Genomic offset across populations") +
+  theme_bw(base_size = 11) +
+  theme(
+    legend.position = "right", panel.grid = element_blank(),
+    strip.text = element_text(size = 11),
+    plot.title = element_text(hjust = 0.5, color = "Black", face = "italic")
+  )
+
+print(plot)
+```
+

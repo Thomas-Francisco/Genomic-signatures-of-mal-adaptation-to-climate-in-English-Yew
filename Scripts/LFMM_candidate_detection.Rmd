@@ -38,42 +38,39 @@ library(dplyr)
 ```
 
 # Introduction
+This script performs candidate detection using the LFMM method (Frichot et al. 2013). The workflow is based on the LFMM tutorial (Frichot and François) and the tutorial by Brenna R. Forester.
 
-This script performs candidate detection using the LFMM methods (Frichot et al. 2013). This script is based on the LFMM tutorial (Frichot and François) and the tutorial by Brenna R. Forester. 
+LFMM can be applied in a univariate or multivariate framework, allowing the association of SNPs with explanatory variables either individually or jointly. The method can account for population structure or run without correction. It is a linear method, as it assumes a linear relationship between loci and climatic variables.
 
-LFMM is a method that can be univariate or multivariate, allowing us to calculate the association of SNPs with explanatory variables individually or with all explanatory variables together. This method can correct for population structure or not. It is a linear method because it assumes a linear relationship between loci and climatic variables.
-LfMM are regression models that combine fixed (climatic variables) and latent effects (parameters that affect the association, such as population structure) (Caye et al. (2019)). 
-LfMMs use a mixed model framework with latent factors, which are hidden factors representing background levels of
-population structure. Latent factors are calculated using a factorisation method similar to PCA, which explains why latent factor results often lie close to the principal component axes (Frichot et al. (2013)).
-Model overview: The effect of environmental variables (primary parameters) on response variables is taken into account while correcting for population structure (the position of individuals or the population in a space, just like a PCA space if I simplify it).Populations closer in this space are expected to have more genetic similarities, while those further apart have less genetic similarity, suggesting that other factors influence their genetic variation. *(It's similar to the example of weight being explained by height and sex. In fact, regardless of the height, we found that the sex has an effect on the weigh, we study the effect of the height on the weigh when the sex is constant (we remove the effect of the sex on the weigh by applying is coefficient) and the same thing when we study the sex, we study this when the height is constant)*.
+LFMMs are regression models that combine fixed effects (climatic variables) with latent effects (hidden parameters capturing background population structure) (Caye et al. 2019). Latent factors are estimated using a factorization method similar to PCA, which explains why latent factor results often align with principal component axes (Frichot et al. 2013).
+
+Model overview: Environmental variables (primary predictors) are tested against genetic variation while correcting for population structure. Populations located closer together in latent space are expected to share more genetic similarities, while those further apart are less similar, suggesting additional factors influencing genetic variation. *(As an analogy: if weight is influenced by both height and sex, we can isolate the effect of height on weight while holding sex constant, and vice versa. LFMM applies a similar logic by removing confounding effects to assess the role of environmental variables more accurately).* The effect of population structure is removed simultaneously with the estimation of the coefficients, so the confounding between structure and climate is reduced. This approach lowers the false negative rate.
 
 
-There are two types of LFMM analysis: 
-- lfmm() is a Bayesian method using a Monte Carlo Markov chain algorithm.
-- lfmm2() is a frequentist approach using least squares estimation (better for large datasets, 1000 to 10000, because it's faster and also because with large datasets there is a convergence in results between frequentist and Bayesian analysis).
+There are two types of LFMM analysis:  
+- lfmm() a Bayesian method using a Markov Chain Monte Carlo (MCMC) algorithm.  
+- lfmm2() a frequentist method using least squares estimation, recommended for large datasets (1,000–10,000 SNPs) because it is faster and converges to results similar to the Bayesian approach.  
 
-LFMM is an analysis using allele counts at the individual level, so we need to do this analysis at the individual level, not at the population level. 
-We will use multivariate LFMM analysis. 
+Since LFMM requires allele counts at the individual level **(not in the new version)**, the analysis must be performed on individual genotypes rather than population-level allele frequencies. In this study, we will use multivariate LFMM analysis.
 
 # Data
 
-Genomic data must be available in individual-level allele counts. We imputed the genomic data at the individual level (475 indiv, 8616 SNPs) with MAC correction.
+Genomic data must be available as individual-level allele counts. We imputed the data at the individual level (475 individuals, 8,616 SNPs) with MAC correction.
 ```{r load data}
 #climatic data at individual level
 load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Climatic_data/new_selection/climatic_data_indivdual_level_scaled_new_selection_df.Rdata")
 climatic_data <- climatic_data_indivdual_level_scaled_new_selection_df
 
-
 load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/Gen_matrix_imp_T_Adapcon_Gentree_475_8616.Rdata")
 #genomic data in numeric
 genomic_data <- Gen_matrix_imp_T_Adapcon_Gentree_475_8616 %>% mutate_all( function(x) as.numeric(as.character(x)))
-
 
 #meta_data
 meta_data_pop <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Populations/taxus_sample_29pop.csv",h=T,sep=";",dec=",")
 #alphabetic order
 meta_data_pop_order <- meta_data_pop[order(meta_data_pop$Population),]
 ```
+
 
 ```{r meta_data}
 meta_data_vcf <- read.csv("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/samples/samples_taxus_baccata_adapcon_gentree.csv",h=T,sep=";",dec=",")
@@ -88,7 +85,7 @@ We need to fit the climate data to the number of individuals in the genomic data
 climatic_data_475 <- climatic_data[climatic_data$VCF_ID %in% row.names(Gen_matrix_imp_T_Adapcon_Gentree_475_8616),]
 ```
 
-We can write an LFMM file or use genomic_data directly as an input to LFMM2. The input to write.geno is a dataset with individuals in the rows, snps in the columns and Na in 9
+We can either write an LFMM input file or use genomic_data directly as input to lfmm2. For write.geno, the input must be a dataset with individuals in rows, SNPs in columns, and missing values coded as 9.
 ```{r genomic data into LFMM format, message=FALSE, warning=FALSE}
 #write.lfmm(genomic_data,"C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/GEA/genomic_data.lfmm")
 
@@ -103,8 +100,7 @@ visualization_writelfmm <- data.frame(read.lfmm("C:/Users/tfrancisco/Documents/T
 
 ## Number of latent factors
 
-Based on the PCA with genetic data, it appears that the first two PC axes may be sufficient to account for population structure, as they can discriminate the three main gene pools identified by STRUCTURE.
-However, since latent factors work differently from PCs, we will perform a latent factor analysis to determine how many latent factors are needed to properly discriminate the three main gene pools. 
+Based on the PCA of the genetic data, the first two PC axes appear sufficient to account for population structure, as they discriminate the three main gene pools identified by STRUCTURE. However, because latent factors do not behave identically to PCs, we will perform a latent factor analysis to determine how many latent factors are required to properly separate the three main gene pools. 
 
 ## LFMM bayesian model
 
@@ -138,12 +134,14 @@ score_Pca <- data.frame(score_LFMM, row.names (genomic_data))
       
       # Latent factor analysis
 latent_factor_LFMM2_candidates_selection <- ggplot() +
-  geom_point(data = PCa_df_score, aes(PC1, PC2, color = Country)) +
+  geom_point(data = PCa_df_score, aes(PC1, PC2, color = Country),size=2.6) +
   scale_colour_manual(name = "Countries",
                       values = c("orangered3", "gold2", "darkorchid3", "navyblue", "turquoise2", "green3", "blue", "red", "black", "gray", "orange", "darkgreen")) +
   xlab("Latent factor 1") + 
   ylab("Latent factor 2") +
-  facet_wrap(~"Graphical representation of the 2 firsts latent factor from LFMM") +
+  #facet_wrap(~"Graphical representation of the 2 firsts latent factor from LFMM") 
+  guides(color = guide_legend(title="Country",override.aes = list(size = 3.5)))+ # Increase legend point size
+
   theme_bw(base_size = 12) +
   theme(
     panel.grid = element_blank(), 
@@ -151,19 +149,18 @@ latent_factor_LFMM2_candidates_selection <- ggplot() +
     panel.background = element_blank(), 
     strip.text = element_text(size = 12),
     legend.text = element_text(size = 13),
-    legend.title = element_text(size = 13),
+    legend.title = element_text(size = 14),
     axis.title = element_text(size = 13)
   )
 print(latent_factor_LFMM2_candidates_selection)
 ```
 
 ```{r save latent factor plot, include=FALSE}
- #save
+#save
 pdf("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/LFMM/latent_factor_LFMM2_outliers_selection.pdf");print(latent_factor_LFMM2_candidates_selection);dev.off()
 ```
 
-The genetic PCs and the latent factor with k=2 appear to be very similar. Also, according to Pritchard et al. 2000, "K can be replaced by estimates of population genetic structure obtained with clustering algorithms such as STRUCTURE".
-Based on this, and after discussion with Benjamin Dauphin (who suggested using k= number of groups-1), we will retain k=2 for our analysis, given the presence of three main gene pools in the structure analysis and the groups identified in the latent factor analysis. 
+The genetic PCs and the latent factors with k = 2 appear to be very similar. Moreover, according to Pritchard et al. (2000), K can be replaced by estimates of population genetic structure obtained with clustering algorithms such as STRUCTURE. Based on this, and following discussions with Benjamin Dauphin (who suggested using k = number of groups – 1), we will retain k = 2 for our analysis, reflecting the three main gene pools identified in the STRUCTURE analysis and supported by the latent factor analysis. 
 
 ## Pvalues calculation and pvalues distribution 
 ```{r calculate the pvalues}
@@ -183,13 +180,13 @@ full = T,
 genomic.control = T)
 ```
 
-The next step is to visualise the p-value distribution with and without correction by the genomic inflation factor (GIF). "The genomic inflation factor expresses the deviation of the distribution of the observed test statistic compared to the distribution of the expected test statistic" (Van den Berg et al. 2019).  
-- high GIF = indicates that we have not corrected enough for population stratification etc -> high false positive rate  
-- low GIF = we corrected too much and lost some of the signal -> high false negative rate  
-- GIF close to 1 = the correction is good  
+The next step is to visualize the p-value distribution with and without correction by the genomic inflation factor (GIF). The GIF expresses the deviation of the observed test statistic distribution compared to the expected distribution (Van den Berg et al. 2019).  
 
-To evaluate the most appropriate GIF for our data, we can examine the shape of the p-value distribution. Ideally, we should see a peak of p-values near 0, followed by a continuous distribution of p-values from 0.1 to 1.  
-We can compare the distribution of corrected and uncorrected GIF. 
+- High GIF -> insufficient correction for population stratification, leading to an inflated false positive rate.  
+- Low GIF -> overcorrection, resulting in loss of signal and an increased false negative rate.  
+- GIF = 1 -> appropriate correction.  
+
+To assess the most appropriate GIF for our data, we can examine the shape of the p-value distribution. Ideally, this distribution should show a strong peak near 0, followed by a smooth, uniform distribution from 0.1 to 1. We will compare the distributions obtained with and without GIF correction. 
 ```{r visualize the pvalue distribution}
 #non corrected for GIF
 Histogram_of_non_calibrated_Pvalues_LFMM<- hist(pv_non_corrected$pvalues,
@@ -204,7 +201,8 @@ Histogram_of_calibrated_Pvalues_LFMM<-hist(pv_corrected$pvalues,
 #gif values
 pv_corrected$gif
 ```
-The distribution of non-calibrated p-values does not follow the expected pattern for well-corrected genomic data, indicating that there may be residual population structure or other confounding factors. In contrast, the distribution of calibrated p-values more closely follows the expected pattern, suggesting that the calibration has effectively improved the correction. In addition, the genomic inflation factor (GIF) value of 2.42, although not exactly 1, indicates a reasonable level of correction.
+
+The distribution of non-calibrated p-values does not follow the expected pattern for well-corrected genomic data, suggesting residual population structure or other confounding factors. In contrast, the calibrated p-values more closely match the expected distribution, indicating that calibration improved the correction. Furthermore, the genomic inflation factor (GIF) value of 2.42, while not exactly 1, still reflects a reasonable level of correction.
 
 ```{r save pvalues distributions, include=FALSE}
 #non corrected
@@ -218,10 +216,10 @@ png("C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/LFMM
      xlab= "P-values");dev.off()
 ```
 
-Can we choose the GIF values ourselves? For the LFMM2 univariate method (full=F), yes we can select a GIF value for each climate variable, but for the full model I haven't found a way to do this.  
-Arguments for using univariate vs multivariate models:   
-  - Univariate: less complicated, less prone to violating assumptions and easier to interpret.  
-  - multivariate: take into account the complex effects or interactions of climatic variables on genetic variation and can reduce the number of tests performed 
+Can we choose the GIF values ourselves? For the LFMM2 univariate method (full = FALSE), yes — we can select a GIF value for each climate variable. However, for the full multivariate model, I have not found a way to manually set the GIF.
+Arguments for using univariate vs. multivariate models:  
+- Univariate: simpler, less prone to assumption violations, and easier to interpret.  
+- Multivariate: accounts for the combined effects and interactions of climatic variables on genetic variation, and reduces the total number of tests performed.  
 
 # Candidate selection
  
@@ -322,21 +320,21 @@ threshold_bonferroni <- 0.05/nrow(df_pvalues_calibrated)
 
 #plot
 Manhattan_plot_LFMM_FDR_10perc <- ggplot(df_pvalues_calibrated) +
-  geom_point(aes(x=1:nrow(df_pvalues_calibrated), y=-log10(pvalues), col = type), size=1.4) +
+  geom_point(aes(x=1:nrow(df_pvalues_calibrated), y=-log10(pvalues), col = type), size=2.5) +
   scale_color_manual(values = c("orange","lightblue")) +
   xlab("Loci") + ylab("-log10(p.values)") +
   geom_hline(yintercept=-log10(threshold_bonferroni), linetype="dashed", color = "red", size=0.6) +
   ggtitle("Manhattan plot LFMM, with FDR 10% threshold") +
-  guides(color=guide_legend(title="SNP type")) +
-  theme_bw(base_size = 13) +
+     guides(color = guide_legend(title="SNP type",override.aes = list(size = 3)))+ # Increase legend point size
+  theme_bw(base_size = 14) +
  theme(legend.position="right",
     panel.grid = element_blank(), 
     plot.background = element_blank(), 
     plot.title = element_text(hjust = 0.5,color = "Black",face="italic"),
     panel.background = element_blank(), 
-    strip.text = element_text(size = 12),
+    strip.text = element_text(size = 14),
     legend.text = element_text(size = 13),
-    legend.title = element_text(size = 13),
+    legend.title = element_text(size = 14),
     axis.title = element_text(size = 13)
 )
 plot(Manhattan_plot_LFMM_FDR_10perc)
@@ -345,21 +343,21 @@ plot(Manhattan_plot_LFMM_FDR_10perc)
 ```{r save Manhattan plot 10 perc, eval=FALSE, include=FALSE}
 #plot
 Manhattan_plot_LFMM_FDR_10perc <- ggplot(df_pvalues_calibrated) +
-  geom_point(aes(x=1:nrow(df_pvalues_calibrated), y=-log10(pvalues), col = type), size=1.4) +
+  geom_point(aes(x=1:nrow(df_pvalues_calibrated), y=-log10(pvalues), col = type), size=2.5) +
   scale_color_manual(values = c("orange","lightblue")) +
   xlab("Loci") + ylab("-log10(p.values)") +
   geom_hline(yintercept=-log10(threshold_bonferroni), linetype="dashed", color = "red", size=0.6) +
   ggtitle("Manhattan plot LFMM, with FDR 10% threshold") +
-  guides(color=guide_legend(title="SNP Type")) +
-  theme_bw(base_size = 11) +
-  theme(legend.position="right",
+     guides(color = guide_legend(title="SNP type",override.aes = list(size = 3)))+ # Increase legend point size
+  theme_bw(base_size = 14) +
+ theme(legend.position="right",
     panel.grid = element_blank(), 
     plot.background = element_blank(), 
     plot.title = element_text(hjust = 0.5,color = "Black",face="italic"),
     panel.background = element_blank(), 
-    strip.text = element_text(size = 12),
+    strip.text = element_text(size = 14),
     legend.text = element_text(size = 13),
-    legend.title = element_text(size = 13),
+    legend.title = element_text(size = 14),
     axis.title = element_text(size = 13)
 )
  #save

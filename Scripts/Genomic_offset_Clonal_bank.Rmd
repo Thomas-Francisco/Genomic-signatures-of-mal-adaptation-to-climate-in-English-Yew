@@ -32,8 +32,10 @@ library(vegan)
 
 # Introduction
 
-This script calculates the genomic offset predictions for the populations in the common garden. The goal is to assess whether there is a relationship between fitness and the genomic offset (GO) predictions, which will help us evaluate the accuracy of our model. The genomic offset is calculated as the distance between the genomic composition  predicted by the GEA model in the climate of the population and in the common garden. Populations whith higher genomic offset (i.e. the ones with the most different local adaptation) should exhibit lower fitness in the common garden.
-To achieve this, we are utilizing an independent set of populations planted in a single clonal bank garden located in central Spain (Segovia).
+This script calculates genomic offset (GO) predictions for populations planted in the common garden. The aim is to evaluate whether there is a relationship between population fitness and GO predictions, which will allow us to assess the accuracy of the model.
+Genomic offset is defined as the distance between the genomic composition predicted by the GEA model under the climate of origin and under the climate of the common garden. Populations with higher genomic offset (i.e., those predicted to be less well adapted to the common garden environment) are expected to exhibit lower fitness in the common garden.
+
+For this validation, we use an independent set of populations grown in a clonal bank located in central Spain.
 
 # Data 
 
@@ -84,7 +86,8 @@ for(x in 1:length(list_models)){
 
 ## Initial genomic data
 
-We also need to load the initial genomic data used to build the model, as well as the outlier set. Indeed, the predict function requires this information because the model does not retain the data and need it to run the model with new data.
+We also need to load the original genomic dataset used to build the model, along with the set of outlier SNPs. This step is necessary because the predict function does not store the input data within the model object. Instead, it requires the initial dataset and outlier set in order to generate predictions with new data.
+
 ```{r genomic data}
 #genomic data
 load("C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/data_allelic_frequencies_29pop_adapcon_gentree_475_8616.Rdata")
@@ -108,7 +111,8 @@ save(CG_common_set,file="C:/Users/tfrancisco/Documents/Thesis/Results/species/ta
 ```
 
 
-Now, based on these models, we calculated the two genomic compositions. We can use the predict function to do this
+Now, based on these models, we calculated the two genomic compositions. We can use the predict function to do this.
+
 ```{r predictions_adaptive_values}
 list_rda <- c("model_GEA_RDA_all","model_GEA_RDA_random","model_GEA_RDA_random_same_AF","model_GEA_RDA_outliers_LC","model_GEA_RDA_outliers_MC","model_GEA_RDA_CG","model_GEA_RDA_random_AF_V2","model_GEA_RDA_all_outliers")
 list_set <- c("all","random","random_same_AF","LC","MC","CG","random_AF_V2","all_outliers")
@@ -138,7 +142,8 @@ for(i in 1:length(list_rda)){
 
 ### Genomic offset
       
-Now we calculated the genomic offset with these genomic compositions 
+Now we calculated the genomic offset with these genomic compositions.
+
 ```{r genomic offset function RDA}
 genomic_offset_pop <- function(RDA, K, Past_score, Future_score,meta_data){
 # Weights based on axis eigen values
@@ -172,7 +177,8 @@ genomic_offset_pop <- function(RDA, K, Past_score, Future_score,meta_data){
 
 ```
 
-We ran the function on the predicted genomic compo:
+We ran the function on the predicted genomic composition:
+
 ```{r genomic offset calculation}
 list_rda <- c("model_GEA_RDA_all","model_GEA_RDA_random","model_GEA_RDA_random_same_AF","model_GEA_RDA_outliers_LC","model_GEA_RDA_outliers_MC","model_GEA_RDA_CG","model_GEA_RDA_random_AF_V2","model_GEA_RDA_all_outliers")
 list_name <- c("all","random", "random_same_AF", "LC", "MC", "CG","random_AF_V2","all_outliers")
@@ -246,6 +252,7 @@ for(i in 1:length(list_models)){
 
 
 ## Interpolate/extrapolate the GEA relationship and calculate genomic offset
+
 ```{r genomic offset function GF}
 ########## calculate adaptive offset for populations in space or time
 genomic_offset_function <- function(gfMod, vars, env1, env2, combined=F,
@@ -304,7 +311,8 @@ assign(paste0("GO_standard_GF_",name,"_",name_clim),genomic_offset_GF)
 
 
 # Draft
-```{r draft genomic offset,eval=F,echo=T}
+
+```{r draft genomic offset, eval=FALSE, include=FALSE}
 list_rda <- c("model_GEA_RDA_all","model_GEA_RDA_random","model_GEA_RDA_random_same_AF","model_GEA_RDA_outliers_LC","model_GEA_RDA_outliers_MC","model_GEA_RDA_CG")
 
 list_natural_habitat_score <- c("adaptive_values_all_natural_pop","adaptive_values_random_natural_pop","adaptive_values_random_same_AF_natural_pop","adaptive_values_LC_natural_pop","adaptive_values_MC_natural_pop","adaptive_values_CG_natural_pop")
