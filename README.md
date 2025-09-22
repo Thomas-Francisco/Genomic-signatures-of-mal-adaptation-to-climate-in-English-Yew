@@ -150,3 +150,5 @@ RDA and GF genomic offsets for the clonal bank populations
 - Santos AS, Gaiotto FA (2020) Knowledge status and sampling strategies to maximize cost-benefit ratio of studies in landscape genomics of wild plants. Sci Rep 10:3706. https://doi.org/10.1038/s41598-020-60788-8
 - Tutorials: Quebec Center for Biodiversity Science (https://r.qcbs.ca/workshop10/book-en/redundancy-analysis.html) and Brenna R. Forester (https://bookdown.org/hhwagner1/LandGenCourse_book/WE_11.html)
 - Matthew C. Fitzpatrick GitHub: https://github.com/fitzLab-AL/geneticOffsetR/blob/main/poplarGBS.gf.supportFunctions.R
+  
+- Session info: R 4.3.2
