@@ -1488,27 +1488,32 @@ border-radius: 0px;
 
 <div id="introduction" class="section level1" number="1">
 <h1><span class="header-section-number">1</span> Introduction</h1>
-<p>This script filters the genetic data of <em>Taxus baccata</em>, which
-is merged from two datasets: Adapcon and Gentree. It then creates
-genetic files in the correct format for several analyses. Two different
-sets of filters are applied depending on the analysis:</p>
-<p>One for population structure (without correcting for minor allele
-count (MAC) and not imputed for missing data). One for GEA and other
-analyses (correcting for MAC and imputing missing data using the most
-common genotype per main gene pool). For both datasets, we first
-followed the GATK Best Practices, third version (Auwera and O’Connor
-2020), with the filter expression: “MQ &lt; 40 || MQRankSum &gt; 12.5 ||
-DP &lt; 10.0 || QUAL &lt; 50.0 || QD &lt; 1.5 || FS &gt; 60.0 ||
-ReadPosRankSum &gt; -8.” These filters were applied using GATK (version
-4.2.3.0) and VCFtools (version 0.1.16).</p>
+<p>This script filters the genetic data of <em>Taxus baccata</em>,
+obtained from 501 trees from 29 populations covering nearly the entire
+range of <em>T. baccata</em> in Europe. t then generates genetic data
+files in the appropriate formats for subsequent analyses. Two distinct
+filtering strategies were applied, depending on the analysis:</p>
+<p>For population structure analyses: no correction for minor allele
+count (MAC) and no imputation of missing data.</p>
+<p>For genotype–environment association (GEA) and other analyses:
+correction for MAC (set to 20, corresponding to twice the number of
+individuals in the smallest population before filtering, which equates
+to a minor allele frequency of 2.11%) and imputation of missing data
+using the most common genotype within each main gene pool.</p>
+<p>Single nucleotide polymorphism (SNP) calling for both datasets was
+conducted following GATK best practices (version 3, with
+–filterExpression ‘MQ &lt; 40 || MQrank &gt; 12.5 || DP &lt; 7.0 || Q
+&lt; 50.0 || QD &lt; 1.5 || FS &gt; 60.0 ||ReadPosRanksum &gt; -8’;
+Auwera and O’Connor 2020). Filtering was performed with GATK on Linux
+(version 4.2.3.0).</p>
 </div>
 <div id="population-stucture-filtering" class="section level1" number="2">
 <h1><span class="header-section-number">2</span> Population stucture
 filtering</h1>
 <div id="data" class="section level2" number="2.1">
 <h2><span class="header-section-number">2.1</span> Data</h2>
-<p>The raw vcf file contains 11374 SNPs, 490 individuals and 8.76 % of
-missing data</p>
+<p>he raw VCF file obtained after GATK filters contained 11,374 SNPs,
+490 individuals, and 8.76% missing data.</p>
 <pre class="r"><code>vcf &lt;- read.vcfR(&quot;C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic/filtered_T_11374SNP_490IND_ADAPCON_GENTREE.vcf&quot;, verbose = FALSE,convertNA=T)
 meta_data_vcf=read.csv(&quot;C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/Samples/samples_taxus_baccata_adapcon_gentree.csv&quot;,h=T,sep=&quot;;&quot;,dec=&quot;,&quot;)
 
@@ -1516,28 +1521,27 @@ meta_data_pop &lt;- read.csv(&quot;C:/Users/tfrancisco/Documents/Thesis/Data/Spe
 </div>
 <div id="filtering-steps" class="section level2" number="2.2">
 <h2><span class="header-section-number">2.2</span> Filtering steps</h2>
-<p>To perform population structure analyses, it is acknowledged that
-reducing the proportion of missing data as much as possible is
-important. Therefore, we applied more stringent filters for missing
-data. However, it is also recognized that minor alleles can be of
-interest for studying genetic structure, so we did not apply filters on
-minor allele frequency (MAF) or minor allele count (MAC). The filters
-were applied using the <strong>vcfR package</strong>.</p>
+<p>For population structure analyses, it is important to minimise the
+proportion of missing data. Therefore, we applied more stringent filters
+for missing data. However, because minor alleles can provide valuable
+information on genetic structure, we did not apply filters on minor
+allele count (MAC). Filtering was performed using the <strong>vcfR
+package</strong>.</p>
 <pre class="r"><code>min_dp= 7
 max_dp=250
 Allele_balance_min= .2
 Allele_balance_max= .8
-Na_snp=0.85 #% of Na per SNP,  0.85 = we kept only snp with less than 15% of missing data
-Na_indiv=0.15#% of Na per individual, 0.15 = we kept only individuals with less than 15% of missing data</code></pre>
-<pre class="r"><code>vcf_filter_structure &lt;- vcf %&gt;% 
+Na_snp=0.85 #% of Na per SNP,  0.85 = only SNPs with less than 15% missing data were retained.
+Na_indiv=0.15#% of Na per individual, 0.15 = only individuals with less than 15% missing data were retained.</code></pre>
+<pre class="r"><code>vcf_filter_structure_V2 &lt;- vcf %&gt;% 
   hard_filter(depth=min_dp ) %&gt;% 
   max_depth(maxdepth =max_dp )%&gt;% 
   filter_allele_balance(min.ratio=Allele_balance_min,max.ratio=Allele_balance_max)%&gt;% 
   missing_by_snp(cutoff=Na_snp)%&gt;%
   missing_by_sample( cutoff = Na_indiv )
 
-vcfR::write.vcf(vcf_filter_structure, file = &quot;C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/script_filtering(not_running_it_each_time)/bayescan.vcf.gz&quot;)</code></pre>
-<p>After filtering, we have:</p>
+#vcfR::write.vcf(vcf_filter_structure, file = &quot;C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/script_filtering(not_running_it_each_time)/bayescan.vcf.gz&quot;)</code></pre>
+<p>After filtering, the dataset contains:</p>
 <pre class="r"><code>vcf_filter_structure</code></pre>
 <pre><code>## ***** Object of Class vcfR *****
 ## 452 samples
@@ -1547,37 +1551,37 @@ vcfR::write.vcf(vcf_filter_structure, file = &quot;C:/Users/tfrancisco/Documents
 ## 4.374 percent missing data
 ## *****        *****         *****</code></pre>
 </div>
-<div id="formating-the-genetic-data" class="section level2" number="2.3">
-<h2><span class="header-section-number">2.3</span> Formating the genetic
-data</h2>
-<p>We used two different types of population structure analyses:
-STRUCTURE software and PCA. The data input requirements for these
-analyses differ, so we needed to format our data accordingly.</p>
+<div id="formatting-the-genetic-data" class="section level2" number="2.3">
+<h2><span class="header-section-number">2.3</span> Formatting the
+genetic data</h2>
+<p>We performed two types of population structure analyses: STRUCTURE
+and principal component analysis (PCA). Because these analyses have
+different data input requirements, the genetic data were formatted
+accordingly</p>
 <div id="structure-software" class="section level3" number="2.3.1">
 <h3><span class="header-section-number">2.3.1</span> STRUCTURE
 software</h3>
-<p>To use STRUCTURE software, we needed to transform the vcfR object
-into a specific format. The first row contains the SNP names, and for
-all other rows, each individual is represented in a row, with SNP
-genotype data in two separate columns per SNP. For example, a genotype
-of 1/1 would be represented as a 1 in one column and another 1 in the
-next column.</p>
-<p>The format required by STRUCTURE is quite specific, so we performed
-several steps in R and Ubuntu to achieve the desired format.</p>
+<p>To use STRUCTURE, the VCF data stored in the vcfR object were
+transformed into the required format: the first row contains SNP names,
+and each subsequent row represents an individual, with each SNP split
+into two columns to represent the genotype (e.g., a genotype of 1/1 is
+coded as 1 in both columns). Because STRUCTURE requires a very specific
+input format, several steps in R and Ubuntu were performed to achieve
+this structure.</p>
 <pre class="r"><code>#change VCFR to dataframe
 vcf_data &lt;- vcf_filter_structure %&gt;% 
   extract.gt(element=&quot;GT&quot;, IDtoRowNames = T, as.numeric=F) %&gt;% t %&gt;% data.frame</code></pre>
-<p>Split the genotypic information into 2 columns for each SNP: we use
-the split_columns function</p>
+<p>Genotypic information for each SNP was split into two columns using
+the split_columns function.</p>
 <pre class="r"><code>#the function
 split_columns &lt;- function(data) {
-  new_data &lt;- data.frame(matrix(ncol = 0, nrow = nrow(data)))  # Create an empty dataframe for the output
+  new_data &lt;- data.frame(matrix(ncol = 0, nrow = nrow(data)))  #Create an empty dataframe for the output
   
-  for (col in names(data)) {#apply the function for each columns of the dataframe
-    split_parts &lt;- strsplit(as.character(data[[col]]), &quot;/&quot;) #split the columns based on /
-    max_parts &lt;- max(sapply(split_parts, length)) # Maximum number of split parts in the column -&gt; store the new columns to then gave a name
+  for (col in names(data)) { #Apply the function to each column of the dataframe
+    split_parts &lt;- strsplit(as.character(data[[col]]), &quot;/&quot;) #Split the columns based on the &#39;/&#39; character
+    max_parts &lt;- max(sapply(split_parts, length)) #= maximum number of split parts per column and store the resulting new columns to assign names
     
-    for (i in 1:max_parts) {#names the columns by the name of the snp + _part 1 or 2
+    for (i in 1:max_parts) {#Names the columns by the name of the snp + _part 1 or 2
       new_column_name &lt;- paste0(col, &quot;_part&quot;, i)
       new_data[[new_column_name]] &lt;- sapply(split_parts, function(x) ifelse(length(x) &gt;= i, x[i], NA))
     }
@@ -1587,78 +1591,78 @@ split_columns &lt;- function(data) {
 }</code></pre>
 <pre class="r"><code>data_split &lt;- split_columns(vcf_data)</code></pre>
 <p>Final dataset and exporting it to a txt file</p>
-<p>Next, we need to ensure that each SNP has a single name for the
-STRUCTURE input, instead of two. We will extract the SNP names from the
-VCF data and modify them accordingly. Additionally, we will replace
-missing data (NA) with -9 and remove any quotation marks (““) from the
-text file directly using a text editor (e.g., Notepad).</p>
-<p>Finally, using Ubuntu, we need to modify the text file to fit the
-Linux text format, since the file was created in Windows and will be
-used by Linux software. We used the command dos2unix nameofdata.txt in
-Ubuntu to convert the file.</p>
+<p>Next, we ensured that each SNP had a single name for the STRUCTURE
+input by extracting SNP names from the VCF data and modifying them as
+needed. Missing data (NA) were replaced with -9, and any quotation marks
+(“”) were removed from the text file using a text editor (e.g.,
+Notepad).</p>
+<p>Finally, because the file was created in Windows but intended for use
+with Linux software, we converted it to Linux text format using Ubuntu.
+This was done with the command dos2unix nameofdata.txt.</p>
 </div>
 <div id="pca" class="section level3" number="2.3.2">
 <h3><span class="header-section-number">2.3.2</span> PCA</h3>
-<p>The format for performing PCA requires genotype information, either
-at the individual level or the population level.</p>
+<p>Performing PCA requires genotype information, which can be provided
+either at the individual level or aggregated at the population
+level.</p>
 <div id="individual-level" class="section level4" number="2.3.2.1">
 <h4><span class="header-section-number">2.3.2.1</span> Individual
 level</h4>
 <pre class="r"><code>vcf_data_no_mac_c &lt;- vcf_filter_structure %&gt;% 
   extract.gt(element=&quot;GT&quot;, IDtoRowNames = T, as.numeric=F) %&gt;% t %&gt;% data.frame</code></pre>
-<p>We also need to change the format of the dataset from nucleotide
-information to genotype data. This raw genotype format will be used to
-calculate the Omega matrix in BAYPASS.</p>
-<pre class="r"><code>#the format is in 0/0, 0/1 and 1/1 so we transform this in allele count
+<p>We also converted the dataset from nucleotide information to genotype
+data. This raw genotype format was then used to calculate the Omega
+matrix in BayPass.</p>
+<pre class="r"><code>#The genotype data were originally coded as 0/0, 0/1, and 1/1, and were transformed into allele counts for downstream analyses.
 
 Data_geno_no_maf_c_8252SNP_452IND &lt;- vcf_data_no_mac_c %&gt;% 
   mutate_all(funs(str_replace(., &quot;0/0&quot;, &quot;0&quot;))) %&gt;% 
   mutate_all(funs(str_replace(., &quot;0/1&quot;, &quot;1&quot;))) %&gt;% 
   mutate_all(funs(str_replace(., &quot;1/1&quot;, &quot;2&quot;)))
 
-#save for BAYPASS analysis 
+#Save for BayPass analysis 
 save(Data_geno_no_maf_c_8252SNP_452IND,file=&quot;C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/GEA/Data_geno_no_maf_c_8252SNP_452IND.Rdata&quot; )</code></pre>
-<p>We want to add to the file, the % of Na per individuals to plot them
-on the PCA.</p>
-<pre class="r"><code>#we need to specify that SNPs are numeric to calculate the Na per individuals 
+<p>We added the percentage of missing data (NA) per individual to the
+file in order to visualise it on the PCA plots.</p>
+<pre class="r"><code>#Specify SNPs as numeric to calculate the percentage of missing data per individual
 Dataset_PCA_8252SNP_452IND &lt;- data.frame(row.names(vcf_data),apply(Data_geno_no_maf_c_8252SNP_452IND, 2, as.numeric))
 
-#calculation of % NA
+#Calculation of NA %
 na_percentage_indiv &lt;- rowMeans(is.na(Dataset_PCA_8252SNP_452IND[,-c(1)])) * 100</code></pre>
-<p>Finally, we can save the desired file for PC analysis.</p>
+<p>Save the prepared file for PCA analysis</p>
 <pre class="r"><code>Dataset_PCA_8252SNP_452IND$na_percentage_indiv &lt;- na_percentage_indiv
 names(Dataset_PCA_8252SNP_452IND)[names(Dataset_PCA_8252SNP_452IND) == &#39;row.names.vcf_data.&#39;] &lt;- &#39;VCF_ID&#39;
 
-#save the genetic dataset 
+#Save the genetic dataset 
 save(Dataset_PCA_8252SNP_452IND,file=&quot;C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/structure/Dataset_PCA_8252SNP_452IND.Rdata&quot;)</code></pre>
 </div>
 <div id="population-level" class="section level4" number="2.3.2.2">
 <h4><span class="header-section-number">2.3.2.2</span> Population
 level</h4>
-<pre class="r"><code>#add VCF_ID but normally it will be in the imputated file
+<pre class="r"><code>#The VCF_ID was added to the dataset, although it is normally present in the imputed file.
 Gen_matrix_non_imputed_T_adapcon_gentree_8252_452 &lt;- Dataset_PCA_8252SNP_452IND[,-8254]
 
-#data for allelic frequencies 
+#Data for allelic frequencies 
 data_frequencies &lt;-merge(meta_data_vcf,Gen_matrix_non_imputed_T_adapcon_gentree_8252_452,&quot;VCF_ID&quot;);row.names(data_frequencies) &lt;- data_frequencies$VCF_ID</code></pre>
-<pre class="r"><code>#formatting the genomic data
+<pre class="r"><code>#Formatting the genomic data
 data_frequencies_num &lt;- data_frequencies[,-c(1:3)] %&gt;% #keeping only the snps
   apply(2,as.numeric) /2 #we divided by 2 because of the format of genomic data: 0,1,2 and for allelic frequencies and we want 0,0.5, 1
 
 
-#dataset with all information and genomic data in the right format
+#The dataset was prepared with all relevant genomic information in the correct format
 data_frequencies_num_tot &lt;- data.frame(data_frequencies[,c(1:3)],data_frequencies_num)
 
-#calculation of allelic frequencies
-allelic_frequencies &lt;-data_frequencies_num_tot %&gt;% dplyr::select(-c(&quot;VCF_ID&quot;,&quot;Country&quot;,&quot;Population&quot;)) %&gt;% #remove non genomic data from the dataset
-  group_by(data_frequencies_num_tot$Population) %&gt;% #we want the allelic frequencies at the population level so we grouped
-  summarise_at(vars(everything()),funs(mean),na.rm=T) %&gt;% #calculate the mean for each snp per pop
+#Calculation of allele frequencies
+allelic_frequencies &lt;-data_frequencies_num_tot %&gt;% dplyr::select(-c(&quot;VCF_ID&quot;,&quot;Country&quot;,&quot;Population&quot;)) %&gt;% #Non-genomic data were removed
+  group_by(data_frequencies_num_tot$Population) %&gt;% #To obtain population-level allele frequencies, individuals were grouped by population
+  summarise_at(vars(everything()),funs(mean),na.rm=T) %&gt;% #mean allele frequency for each SNP per population was calculated
     ungroup() %&gt;%
 as.data.frame()</code></pre>
 <p>Save the dataset of allelic frequencies</p>
-<pre class="r"><code>#move population level to row.names
+<pre class="r"><code>#Move population level to row.names
 data_allelic_frequencies_non_imp_T_adapcon_gentree_452_8252snps &lt;- allelic_frequencies %&gt;% dplyr::select(-c(&quot;data_frequencies_num_tot$Population&quot;)); row.names(data_allelic_frequencies_non_imp_T_adapcon_gentree_452_8252snps) &lt;- allelic_frequencies$&#39;data_frequencies_num_tot$Population&#39;
 
-#save
+#Save
 save(data_allelic_frequencies_non_imp_T_adapcon_gentree_452_8252snps,file=&quot;C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/data_allelic_frequencies_non_imp_T_adapcon_gentree_452_8252snps.Rdata&quot;)</code></pre>
 </div>
 </div>
@@ -1667,18 +1671,18 @@ save(data_allelic_frequencies_non_imp_T_adapcon_gentree_452_8252snps,file=&quot;
 <div id="genotype-environment-association-gea-analyses-and-other-analyses-filering" class="section level1" number="3">
 <h1><span class="header-section-number">3</span> Genotype-environment
 association (GEA) analyses and other analyses filering</h1>
-<p>For landscape genomic approaches, we applied a less stringent
-filtering of missing data as the accuracy of these approaches is enhance
-by an increasing number SNPs and individuals (Santos and Gaiotto 2020).
-We also imputed the remaining missing data by the most common genotype
-within each main gene pool identified by a STRUCTURE clustering analysis
-(Pritchard et al. 2000) using the Evanno method (Evanno et al. 2005) as
-most GEA analysis do not support missing data. We will impute based on
-the main gene pools identified in STRUCTURE analysis. Moreover, since
-low frequency alleles can lead to high rate of false positives in these
-type of analyses, we removed all SNPs with a minor allele count equal to
-2 times the number of individuals for the smallest population before
-filtering.</p>
+<p>For genotype–environment association (GEA) and other landscape
+genomic analyses, we applied less stringent filtering for missing data,
+as the accuracy of these approaches seems to improve with an increased
+number of SNPs and individuals (Santos &amp; Gaiotto, 2020). Remaining
+missing data were imputed using the most common genotype within each
+main gene pool identified by STRUCTURE clustering (Pritchard et al.,
+2000) and evaluated with the Evanno method (Evanno et al., 2005),
+because most GEA analyses do not support missing data. Additionally, to
+try to reduce the risk of false positives associated with low-frequency
+alleles, all SNPs with a minor allele count below twice the number of
+individuals in the smallest population prior to filtering were
+removed.</p>
 <div id="filtering-steps-1" class="section level2" number="3.1">
 <h2><span class="header-section-number">3.1</span> Filtering steps</h2>
 <pre class="r"><code>min_dp= 7
@@ -1686,8 +1690,8 @@ max_dp=250
 Allele_balance_min= .2
 Allele_balance_max= .8
 mac=20
-Na_snp=0.7 #% of Na per SNP,  0.85 = we kept only snp with less than 15% of missing data
-Na_indiv=0.3#% of Na per individual, 0.15 = we kept only individuals with less than 15% of missing data</code></pre>
+Na_snp=0.7 #% of Na per SNP,  0.70 = only SNPs with less than 30% missing data were retained.
+Na_indiv=0.3#% of Na per individual, 0.30 = only individuals with less than 30% missing data were retained.</code></pre>
 <pre class="r"><code>vcf_filter_GEA &lt;- vcf %&gt;% 
   hard_filter(depth= min_dp) %&gt;% 
    max_depth(maxdepth =max_dp )%&gt;%
@@ -1695,7 +1699,7 @@ Na_indiv=0.3#% of Na per individual, 0.15 = we kept only individuals with less t
   min_mac(min.mac = mac) %&gt;% 
   missing_by_snp(cutoff=Na_snp) %&gt;%
   missing_by_sample( cutoff = Na_indiv)</code></pre>
-<p>Load file to gain time by not running the filters each time:</p>
+<p>Load file</p>
 <p>After filtering, we have:</p>
 <pre class="r"><code>vcf_filter_GEA</code></pre>
 <pre><code>## ***** Object of Class vcfR *****
@@ -1709,56 +1713,56 @@ Na_indiv=0.3#% of Na per individual, 0.15 = we kept only individuals with less t
 <div id="imputing-genetic-data" class="section level2" number="3.2">
 <h2><span class="header-section-number">3.2</span> Imputing genetic
 data</h2>
-<p>We are now changing the format of the vcf to fit the format for GEA
-analysis First, we’re keeping only the genotype information from the
-vcfR</p>
+<p>We converted the VCF data to the format required for GEA analyses.
+First, only the genotype information was retained from the vcfR
+object.</p>
 <pre class="r"><code>vcf_data_GEA &lt;- vcf_filter_GEA %&gt;% 
   extract.gt(element=&quot;GT&quot;, IDtoRowNames = T, as.numeric=F) %&gt;% t %&gt;% data.frame</code></pre>
-<p>We also need to change the format of the dataset from nucleotide
-information to genotype</p>
-<pre class="r"><code>#the format is in 0/0, 0/1 and 1/1 so we transform this in allele count
+<p>The dataset was also converted from nucleotide information to
+genotype format.</p>
+<pre class="r"><code>#The format is in 0/0, 0/1 and 1/1 so we transform this in allele count
 genetic_data_geno &lt;- vcf_data_GEA %&gt;% 
   mutate_all(funs(str_replace(., &quot;0/0&quot;, &quot;0&quot;))) %&gt;% 
   mutate_all(funs(str_replace(., &quot;0/1&quot;, &quot;1&quot;))) %&gt;% 
   mutate_all(funs(str_replace(., &quot;1/1&quot;, &quot;2&quot;)))</code></pre>
-<p>The imputation is based on the most common genotype per main gene
-pools.</p>
-<pre class="r"><code>#First add the label main_gene_pool based on the STRUCTURE results to choose k=3, so 3 main_gene_pool
+<p>Missing data were imputed using the most common genotype within each
+main gene pool.</p>
+<pre class="r"><code>#First, a main_gene_pool label was added to each individual based on STRUCTURE results, using K = 3 to define three main gene pools.
 meta_data_pop$main_gene_pool &lt;- c(&quot;Eastern_pool&quot;,&quot;Western_pool&quot;,&quot;Western_pool&quot;,&quot;Central_pool&quot;,&quot;Eastern_pool&quot;,&quot;Eastern_pool&quot;,&quot;Eastern_pool&quot;,&quot;Western_pool&quot;,&quot;Western_pool&quot;,&quot;Western_pool&quot;,&quot;Central_pool&quot;,&quot;Western_pool&quot;,&quot;Eastern_pool&quot;,&quot;Eastern_pool&quot;,&quot;Eastern_pool&quot;,&quot;Eastern_pool&quot;,&quot;Western_pool&quot;,&quot;Western_pool&quot;,&quot;Western_pool&quot;,&quot;Western_pool&quot;,&quot;Western_pool&quot;,&quot;Central_pool&quot;,&quot;Central_pool&quot;,&quot;Central_pool&quot;,&quot;Central_pool&quot;,&quot;Central_pool&quot;,&quot;Western_pool&quot;,&quot;Western_pool&quot;,&quot;Western_pool&quot;)
-#merge info
+#Merge info
 meta_data_tot &lt;- merge(meta_data_vcf,meta_data_pop,&quot;Population&quot;)
 
 #Imputation steps
 
 ##Keep ID info
-gen_grouped &lt;- genetic_data_geno %&gt;% tibble::rownames_to_column(var = &quot;VCF_ID&quot;)#we put the ID of samples in a column
+gen_grouped &lt;- genetic_data_geno %&gt;% tibble::rownames_to_column(var = &quot;VCF_ID&quot;)#We put the ID of samples in a column
 list_indiv_427 &lt;- list(gen_grouped$VCF_ID)
 
-##create a metadata keeping only individuals retained after filtering steps
+##A metadata file was created containing only the individuals retained after the filtering steps.
 meta_data_vcf_imputation &lt;- meta_data_tot[meta_data_tot$VCF_ID %in% gen_grouped$VCF_ID,] 
 
 
-##we need to specify that SNPs are numeric
+##We need to specify that SNPs are numeric
 gen_grouped_num &lt;- data.frame(gen_grouped[,c(&quot;VCF_ID&quot;)],apply(gen_grouped[,c(2:8617)], 2, as.numeric))
 
-##name of VCF_ID to merge 
+##Name of VCF_ID to merge 
 names(gen_grouped_num)[names(gen_grouped_num) == &#39;gen_grouped...c..VCF_ID...&#39;] &lt;- &#39;VCF_ID&#39;
 
-##total dataset
+##Total dataset
 gen_grouped_num_tot &lt;- merge(meta_data_vcf_imputation[,-c(4:8)],gen_grouped_num,&quot;VCF_ID&quot;)
-##perform the imputation by transforming the NAs into the most common genotype per gene pool:
+##Perform the imputation by transforming the NAs into the most common genotype per gene pool:
 
-gen_imp &lt;- gen_grouped_num_tot %&gt;%#gene pool
-  group_by(main_gene_pool) %&gt;% #separate the table to organize it per main gene pool and apply the function below at the gene pool level
-apply(2, function(x) replace(x, is.na(x), as.numeric(names(which.max(table(x)))))) %&gt;% #calculate the most common genotype and fill the Na with that
+gen_imp &lt;- gen_grouped_num_tot %&gt;%#Gene pool
+  group_by(main_gene_pool) %&gt;% #Separate the table to organize it per main gene pool and apply the function below at the gene pool level
+apply(2, function(x) replace(x, is.na(x), as.numeric(names(which.max(table(x)))))) %&gt;% #Calculate the most common genotype and fill the Na with that
   as.data.frame() %&gt;% 
   ungroup()
 ##Convert ID column back to row names
 rownames(gen_imp) &lt;- gen_imp$VCF_ID
 
-gen_matrix &lt;- gen_imp[,-c(1:4)]  # remove ID,country and main gene pool columns from data frame
+gen_matrix &lt;- gen_imp[,-c(1:4)]  # Remove ID,country and main gene pool columns from data frame
 
-##we have an issues with space added during imputation, we remove them: 
+##We have an issues with space added during imputation, we removed them: 
 library(stringr)
 Gen_matrix_imp_T_Adapcon_Gentree_475_8616 &lt;- gen_matrix %&gt;% 
   mutate(across(where(is.character), str_trim))
@@ -1773,21 +1777,24 @@ prop.table(table(is.na(gen_grouped_num_tot)))</code></pre>
 ## FALSE 
 ##     1</code></pre>
 </div>
-<div id="formating-genetic-data" class="section level2" number="3.3">
-<h2><span class="header-section-number">3.3</span> Formating genetic
+<div id="formatting-genetic-data" class="section level2" number="3.3">
+<h2><span class="header-section-number">3.3</span> Formatting genetic
 data</h2>
-<p>We will save 2 types of genomic data for further analyses:<br />
+<p>Two types of genomic datasets were saved for downstream
+analyses:<br />
 - individual-level genomic data<br />
-- population-level genomic data<br />
-Both could be used as input of GEA or other genomic analyses.</p>
+- population-level genomic data</p>
+<p>Both datasets can serve as input for GEA or other genomic analyses,
+depending on our goalsand study design. In this study, we used the
+population-level dataset.</p>
 <div id="individual-level-genomic-data" class="section level3" number="3.3.1">
 <h3><span class="header-section-number">3.3.1</span> Individual-level
 genomic data</h3>
-<p>This is the output of the imputing steps</p>
-<pre class="r"><code>#save the dataframes to load it in further scripts to avoid going through this script every time
+<p>This dataset represents the output after the imputation steps.</p>
+<pre class="r"><code>#Save the dataframes to load it in further scripts to avoid going through this script every time
 save(Gen_matrix_imp_T_Adapcon_Gentree_475_8616,file=&quot;C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/Gen_matrix_imp_T_Adapcon_Gentree_475_8616.Rdata&quot;)
 
-#we also save a version with the nucleotide format : 0/0, 0/1 and 1/1 for baypass
+#We also saved a version with the nucleotide format : 0/0, 0/1 and 1/1 for baypass
 
 Gen_matrix_imp_T_Adapcon_Gentree_475_8616_BAYPASS &lt;- Gen_matrix_imp_T_Adapcon_Gentree_475_8616 %&gt;% 
   mutate_all(funs(str_replace(.,&quot;0&quot;,&quot;0/0&quot;))) %&gt;% 
@@ -1799,39 +1806,38 @@ save(Gen_matrix_imp_T_Adapcon_Gentree_475_8616_BAYPASS,file=&quot;C:/Users/tfran
 <div id="population-level-genomic-data" class="section level3" number="3.3.2">
 <h3><span class="header-section-number">3.3.2</span> Population-level
 genomic data</h3>
-<p>To work at the population-level, we need to calculate allelic
-frequencies for each snp per population.</p>
-<pre class="r"><code>#add VCF_ID but normally it will be in the imputated file
+<p>To perform analyses at the population level, allele frequencies were
+calculated for each SNP within each population.</p>
+<pre class="r"><code>#Add VCF_ID but normally it should be in the imputated file
 Gen_matrix_imp_T_Adapcon_Gentree_475_8616$VCF_ID &lt;- row.names(Gen_matrix_imp_T_Adapcon_Gentree_475_8616)
-#metadata
+#Metadata
 meta_data_vcf_475 &lt;- meta_data_vcf[meta_data_vcf$VCF_ID %in% row.names(Gen_matrix_imp_T_Adapcon_Gentree_475_8616),]
 
-#data for allelic frequencies 
+#Data for allelic frequencies 
 data_frequencies &lt;-merge(meta_data_vcf_475,Gen_matrix_imp_T_Adapcon_Gentree_475_8616,&quot;VCF_ID&quot;);row.names(data_frequencies) &lt;- data_frequencies$VCF_ID</code></pre>
-<pre class="r"><code>#formatting the genomic data
-data_frequencies_num &lt;- data_frequencies[,-c(1:3)] %&gt;% #keeping only the snps
+<pre class="r"><code>#Formatting the genomic data
+data_frequencies_num &lt;- data_frequencies[,-c(1:3)] %&gt;% #Keeping only the snps
   apply(2,as.numeric) /2 #we divided by 2 because of the format of genomic data: 0,1,2 and for allelic frequencies and we want 0,0.5, 1
 
 
-#dataset with all information and genomic data in the right format
+#Dataset with all information and genomic data in the right format
 data_frequencies_num_tot &lt;- data.frame(data_frequencies[,c(1:3)],data_frequencies_num)
 
-#calculation of allelic frequencies
-allelic_frequencies &lt;-data_frequencies_num_tot %&gt;% dplyr::select(-c(&quot;VCF_ID&quot;,&quot;Country&quot;,&quot;Population&quot;)) %&gt;% #remove non genomic data from the dataset
-  group_by(data_frequencies_num_tot$Population) %&gt;% #we want the allelic frequencies at the population level so we grouped
-  summarise_at(vars(everything()),funs(mean),na.rm=T) %&gt;% #calculate the mean for each snp per pop
+#Calculation of allelic frequencies
+allelic_frequencies &lt;-data_frequencies_num_tot %&gt;% dplyr::select(-c(&quot;VCF_ID&quot;,&quot;Country&quot;,&quot;Population&quot;)) %&gt;% #Remove non genomic data from the dataset
+  group_by(data_frequencies_num_tot$Population) %&gt;% #We wanted the allelic frequencies at the population level so we grouped
+  summarise_at(vars(everything()),funs(mean),na.rm=T) %&gt;% #Calculate the mean for each snp per pop
     ungroup() %&gt;%
 as.data.frame()</code></pre>
-<p>Save the dataset of allelic frequencies</p>
-<pre class="r"><code>#move population level to row.names
+<p>Save the allelic frequencies dataset</p>
+<pre class="r"><code>#Move population level to row.names
 data_allelic_frequencies_29pop_adapcon_gentree_475_8616 &lt;- allelic_frequencies %&gt;% dplyr::select(-c(&quot;data_frequencies_num_tot$Population&quot;)); row.names(data_allelic_frequencies_29pop_adapcon_gentree_475_8616) &lt;- allelic_frequencies$&#39;data_frequencies_num_tot$Population&#39;
 
-#save
-
+#Save
 save(data_allelic_frequencies_29pop_adapcon_gentree_475_8616,file=&quot;C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/data_allelic_frequencies_29pop_adapcon_gentree_475_8616.Rdata&quot;)</code></pre>
-<p><strong>what is below is a draft, not useful here, could be use for
-imputation at the gene pool level if we imputed some gene pool per
-multiple gene pools</strong></p>
+<p><strong>what is below is a draft, not useful in this study, could be
+use for imputation at the gene pool level if we imputed some gene pool
+per multiple gene pools</strong></p>
 </div>
 </div>
 </div>

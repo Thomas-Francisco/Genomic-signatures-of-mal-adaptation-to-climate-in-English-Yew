@@ -1488,17 +1488,17 @@ border-radius: 0px;
 
 <div id="introduction" class="section level1" number="1">
 <h1><span class="header-section-number">1</span> Introduction</h1>
-<p>This script calculates the genomic offset predictions for the
-populations in the common garden. The goal is to assess whether there is
-a relationship between fitness and the genomic offset (GO) predictions,
-which will help us evaluate the accuracy of our model. The genomic
-offset is calculated as the distance between the genomic composition
-predicted by the GEA model in the climate of the population and in the
-common garden. Populations whith higher genomic offset (i.e. the ones
-with the most different local adaptation) should exhibit lower fitness
-in the common garden. To achieve this, we are utilizing an indenpend set
-of populations planted in a single clonal bank garden located in central
-Spain (Segovia).</p>
+<p>This script calculates genomic offset (GO) predictions for
+populations planted in the common garden. The aim is to evaluate whether
+there is a relationship between population fitness and GO predictions,
+which will allow us to assess the accuracy of the model. Genomic offset
+is defined as the distance between the genomic composition predicted by
+the GEA model under the climate of origin and under the climate of the
+common garden. Populations with higher genomic offset (i.e., those
+predicted to be less well adapted to the common garden environment) are
+expected to exhibit lower fitness in the common garden.</p>
+<p>For this validation, we use an independent set of populations grown
+in a clonal bank located in central Spain.</p>
 </div>
 <div id="data" class="section level1" number="2">
 <h1><span class="header-section-number">2</span> Data</h1>
@@ -1529,7 +1529,7 @@ Redundancy analysis</h1>
 <p>We predicted the genomic composition for the populations both in
 their natural habitat and in the common garden.</p>
 <p>Load GEA models</p>
-<pre class="r"><code>list_models &lt;- c(&quot;model_GEA_RDA_all&quot;,&quot;model_GEA_RDA_random&quot;,&quot;model_GEA_RDA_random_same_AF&quot;,&quot;model_GEA_RDA_CG&quot;,&quot;model_GEA_RDA_outliers_LC&quot;,&quot;model_GEA_RDA_outliers_MC&quot;)
+<pre class="r"><code>list_models &lt;- c(&quot;model_GEA_RDA_all&quot;,&quot;model_GEA_RDA_random&quot;,&quot;model_GEA_RDA_random_same_AF&quot;,&quot;model_GEA_RDA_CG&quot;,&quot;model_GEA_RDA_outliers_LC&quot;,&quot;model_GEA_RDA_outliers_MC&quot;,&quot;model_GEA_RDA_random_AF_V2&quot;,&quot;model_GEA_RDA_all_outliers&quot;)
 
 for(x in 1:length(list_models)){
   
@@ -1540,17 +1540,18 @@ for(x in 1:length(list_models)){
 <div id="initial-genomic-data" class="section level2" number="3.2">
 <h2><span class="header-section-number">3.2</span> Initial genomic
 data</h2>
-<p>We also need to load the initial genomic data used to build the
-model, as well as the outlier set. Indeed, the predict function requires
-this information because the model does not retain the data and need it
-to run the model with new data.</p>
+<p>We also need to load the original genomic dataset used to build the
+model, along with the set of outlier SNPs. This step is necessary
+because the predict function does not store the input data within the
+model object. Instead, it requires the initial dataset and outlier set
+in order to generate predictions with new data.</p>
 <pre class="r"><code>#genomic data
 load(&quot;C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/data_allelic_frequencies_29pop_adapcon_gentree_475_8616.Rdata&quot;)
 
 genomic_matrix &lt;- data_allelic_frequencies_29pop_adapcon_gentree_475_8616  
 
 
-list_models &lt;- c(&quot;random_neutral_set_SNPs_T_adapcon_gentree_bis&quot;,&quot;random_set_taxus&quot;,&quot;outliers_set_final_overlapping_no_LD_LC_new_var&quot;,&quot;outliers_set_final_overlapping_no_LD_new_var&quot;)
+list_models &lt;- c(&quot;random_neutral_set_SNPs_T_adapcon_gentree_bis&quot;,&quot;random_set_taxus&quot;,&quot;outliers_set_final_overlapping_no_LD_LC_new_var&quot;,&quot;outliers_set_final_overlapping_no_LD_new_var&quot;,&quot;random_set_taxus_not_overlap_both_dataset_V2&quot;,&quot;unique_outliers&quot;)
 for(i in 1:length(list_models)){
   model &lt;- list_models[i]
   load(paste0(&quot;C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/&quot;,model,&quot;.Rdata&quot;))
@@ -1558,15 +1559,15 @@ for(i in 1:length(list_models)){
 
 list_random_SNPs &lt;- colnames(random_neutral_set_SNPs_T_adapcon_gentree_bis)
 list_random_SNPs_same_AF &lt;- random_set_taxus$name_snps
-
+list_random_SNPs_same_AF_V2 &lt;- random_set_taxus_not_overlap_both_dataset_V2$name_snps
 #CG common
 load(&quot;C:/Users/tfrancisco/Documents/Thesis/Data/Species/Taxus_baccata/genetic_new/gen_matrix_imp_CG.Rdata&quot;)
 CG_common_set &lt;- intersect(outliers_set_final_overlapping_no_LD_LC_new_var, colnames(gen_matrix_imp_CG))
 save(CG_common_set,file=&quot;C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/GEA_new_var/outliers/CG_common_set.Rdata&quot;)</code></pre>
 <p>Now, based on these models, we calculated the two genomic
-compositions. We can use the predict function to do this</p>
-<pre class="r"><code>list_rda &lt;- c(&quot;model_GEA_RDA_all&quot;,&quot;model_GEA_RDA_random&quot;,&quot;model_GEA_RDA_random_same_AF&quot;,&quot;model_GEA_RDA_outliers_LC&quot;,&quot;model_GEA_RDA_outliers_MC&quot;,&quot;model_GEA_RDA_CG&quot;)
-list_set &lt;- c(&quot;all&quot;,&quot;random&quot;,&quot;random_same_AF&quot;,&quot;LC&quot;,&quot;MC&quot;,&quot;CG&quot;)
+compositions. We can use the predict function to do this.</p>
+<pre class="r"><code>list_rda &lt;- c(&quot;model_GEA_RDA_all&quot;,&quot;model_GEA_RDA_random&quot;,&quot;model_GEA_RDA_random_same_AF&quot;,&quot;model_GEA_RDA_outliers_LC&quot;,&quot;model_GEA_RDA_outliers_MC&quot;,&quot;model_GEA_RDA_CG&quot;,&quot;model_GEA_RDA_random_AF_V2&quot;,&quot;model_GEA_RDA_all_outliers&quot;)
+list_set &lt;- c(&quot;all&quot;,&quot;random&quot;,&quot;random_same_AF&quot;,&quot;LC&quot;,&quot;MC&quot;,&quot;CG&quot;,&quot;random_AF_V2&quot;,&quot;all_outliers&quot;)
 
 K = 2 # number of rda axes retained
 
@@ -1591,7 +1592,7 @@ for(i in 1:length(list_rda)){
 <div id="genomic-offset" class="section level3" number="3.2.1">
 <h3><span class="header-section-number">3.2.1</span> Genomic offset</h3>
 <p>Now we calculated the genomic offset with these genomic
-compositions</p>
+compositions.</p>
 <pre class="r"><code>genomic_offset_pop &lt;- function(RDA, K, Past_score, Future_score,meta_data){
 # Weights based on axis eigen values
   weights &lt;- RDA$CCA$eig/sum(RDA$CCA$eig)
@@ -1621,9 +1622,9 @@ compositions</p>
   # Return prediction of genetic offset for each RDA axis and a global genetic offset for each population
   return(list(Population=meta_data$Population,Proj_offset = Proj_offset, Proj_offset_global = Proj_offset_global, weights = weights[1:K]))
 }</code></pre>
-<p>We ran the function on the predicted genomic compo:</p>
-<pre class="r"><code>list_rda &lt;- c(&quot;model_GEA_RDA_all&quot;,&quot;model_GEA_RDA_random&quot;,&quot;model_GEA_RDA_random_same_AF&quot;,&quot;model_GEA_RDA_outliers_LC&quot;,&quot;model_GEA_RDA_outliers_MC&quot;,&quot;model_GEA_RDA_CG&quot;)
-list_name &lt;- c(&quot;all&quot;,&quot;random&quot;, &quot;random_same_AF&quot;, &quot;LC&quot;, &quot;MC&quot;, &quot;CG&quot;)
+<p>We ran the function on the predicted genomic composition:</p>
+<pre class="r"><code>list_rda &lt;- c(&quot;model_GEA_RDA_all&quot;,&quot;model_GEA_RDA_random&quot;,&quot;model_GEA_RDA_random_same_AF&quot;,&quot;model_GEA_RDA_outliers_LC&quot;,&quot;model_GEA_RDA_outliers_MC&quot;,&quot;model_GEA_RDA_CG&quot;,&quot;model_GEA_RDA_random_AF_V2&quot;,&quot;model_GEA_RDA_all_outliers&quot;)
+list_name &lt;- c(&quot;all&quot;,&quot;random&quot;, &quot;random_same_AF&quot;, &quot;LC&quot;, &quot;MC&quot;, &quot;CG&quot;,&quot;random_AF_V2&quot;,&quot;all_outliers&quot;)
 
 K = 2  # Number of RDA axes retained
 
@@ -1684,7 +1685,7 @@ forest</h1>
 <div id="gea-models-1" class="section level2" number="4.1">
 <h2><span class="header-section-number">4.1</span> GEA models</h2>
 <p>Load the GEA models</p>
-<pre class="r"><code>list_models &lt;- c(&quot;all&quot;,&quot;random_bis&quot;,&quot;random_same_AF_bis&quot;,&quot;LC&quot;,&quot;CG&quot;)
+<pre class="r"><code>list_models &lt;- c(&quot;all&quot;,&quot;random_bis&quot;,&quot;random_same_AF_bis&quot;,&quot;LC&quot;,&quot;CG&quot;,&quot;random_same_AF_V2&quot;,&quot;all_outliers&quot;)
 
 for(i in 1:length(list_models)){
   model &lt;- list_models[i]
@@ -1712,10 +1713,10 @@ genomic_offset_function &lt;- function(gfMod, vars, env1, env2, combined=F,
   return(dOut)
 }</code></pre>
 <p>We can apply this function to our dataset:</p>
-<pre class="r"><code>list_set &lt;- c(&quot;Run_GEA_GF_all&quot;,&quot;Run_GEA_GF_random_bis&quot;,&quot;Run_GEA_GF_random_same_AF_bis&quot;,&quot;Run_GEA_GF_LC&quot;,&quot;Run_GEA_GF_CG&quot;)
+<pre class="r"><code>list_set &lt;- c(&quot;Run_GEA_GF_all&quot;,&quot;Run_GEA_GF_random_bis&quot;,&quot;Run_GEA_GF_random_same_AF_bis&quot;,&quot;Run_GEA_GF_LC&quot;,&quot;Run_GEA_GF_CG&quot;,&quot;Run_GEA_GF_random_same_AF_V2&quot;,&quot;Run_GEA_GF_all_outliers&quot;)
 list_CG &lt;- c(&quot;2012&quot;,&quot;2021&quot;)
 vars &lt;- colnames(clim_df_natural_pop)
-list_name &lt;- c(&quot;all&quot;,&quot;random&quot;,&quot;random_same_AF&quot;,&quot;LC&quot;,&quot;CG&quot;)
+list_name &lt;- c(&quot;all&quot;,&quot;random&quot;,&quot;random_same_AF&quot;,&quot;LC&quot;,&quot;CG&quot;,&quot;random_AF_V2&quot;,&quot;all_outliers&quot;)
 
 #vars = past climatic data used in GEA
 
@@ -1749,32 +1750,6 @@ assign(paste0(&quot;GO_standard_GF_&quot;,name,&quot;_&quot;,name_clim),genomic_
 </div>
 <div id="draft" class="section level1" number="5">
 <h1><span class="header-section-number">5</span> Draft</h1>
-<pre class="r"><code>list_rda &lt;- c(&quot;model_GEA_RDA_all&quot;,&quot;model_GEA_RDA_random&quot;,&quot;model_GEA_RDA_random_same_AF&quot;,&quot;model_GEA_RDA_outliers_LC&quot;,&quot;model_GEA_RDA_outliers_MC&quot;,&quot;model_GEA_RDA_CG&quot;)
-
-list_natural_habitat_score &lt;- c(&quot;adaptive_values_all_natural_pop&quot;,&quot;adaptive_values_random_natural_pop&quot;,&quot;adaptive_values_random_same_AF_natural_pop&quot;,&quot;adaptive_values_LC_natural_pop&quot;,&quot;adaptive_values_MC_natural_pop&quot;,&quot;adaptive_values_CG_natural_pop&quot;)
-list_CG_score &lt;- c(&quot;adaptive_values_all_common_garden&quot;,&quot;adaptive_values_random_common_garden&quot;,&quot;adaptive_values_random_same_AF_common_garden&quot;,&quot;adaptive_values_LC_common_garden&quot;,&quot;adaptive_values_MC_common_garden&quot;,&quot;adaptive_values_CG_common_garden&quot;)
-list_name &lt;- c(&quot;all&quot;,&quot;random&quot;,&quot;random_same_AF&quot;,&quot;LC&quot;,&quot;MC&quot;,&quot;CG&quot;)  
-
-for(x in 1:length(list_rda)){
-RDA &lt;- get(list_rda[x])
-  adaptive_natural_score &lt;- get(list_natural_habitat_score[x])
-  CG_score &lt;- get(list_CG_score[x])
-  name &lt;- list_name[x]
-
-  
-  #run this function on our populations
-Run_genomic_offset_pop&lt;- genomic_offset_pop(RDA,2,adaptive_natural_score,CG_score,meta_data)
-#df
- genomic_offset_df&lt;- data.frame(Population=unlist(Run_genomic_offset_pop$Population),Genomic_offset_random=unlist(Run_genomic_offset_pop$Proj_offset_global))
- #order the df per population
- Genomic_offset_Taxus_Adapcon_Gentree_RDA &lt;- genomic_offset_df[order(genomic_offset_df$Population),]
- colnames(Genomic_offset_Taxus_Adapcon_Gentree_RDA) &lt;- c(&quot;Population&quot;,paste0(&quot;GO_&quot;,name)) 
- 
- assign(paste0(&quot;GO_RDA_&quot;,name,&quot;_standard_Taxus&quot;),Genomic_offset_Taxus_Adapcon_Gentree_RDA)
- 
- #save
- save(list = paste0(&quot;GO_RDA_&quot;,name,&quot;_standard_Taxus&quot;),file=paste0(&quot;C:/Users/tfrancisco/Documents/Thesis/Results/species/taxus/Genomic_offset/Validation/GO/standard_GO/RDA/data/GO_RDA_&quot;,name,&quot;_standard_Taxus.Rdata&quot;))
-}</code></pre>
 </div>
 
 
