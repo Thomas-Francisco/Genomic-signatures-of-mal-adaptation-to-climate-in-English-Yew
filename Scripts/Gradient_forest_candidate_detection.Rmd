@@ -255,7 +255,7 @@ for(i in 1: length(GF_data)){
   
 for(x in 1:5){
   name_file <- paste0("Run_",x,"_",model_name)
-  Run <- Run_GF_and_select_outliers(genomic_matrix, Past_climatic, 500, 4,600,vars,x=x,path)
+  Run <- Run_GF_and_select_outliers(genomic_data, Past_climatic, 500, 4,600,vars,x=x,path)
   assign(name_file, Run)
   
   #We save the Runs of GF_raw if needed to rerun them to change threshold or perform new analysis/ figures
