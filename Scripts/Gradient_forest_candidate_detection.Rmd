@@ -13,7 +13,7 @@ output:
 
 # Introduction
 
-This script performs candidate detection using **Gradient Forest (GF).**
+This script performs candidate detection using **Gradient Forest (GF).** 
 Gradient Forest is a machine learning method introduced by Ellis, Smith, and Pitcher (2012). Fitzpatrick & Keller (2015) describe how GF can be used to:  
 - Analyse and map spatial variation in allele frequencies as a function of environmental gradients (outlier detection via GEA).  
 - Project patterns of genomic variation under different climates (genomic offset).  
