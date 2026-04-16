@@ -102,7 +102,6 @@ Local adaptation to climate has been investigated by first establishing whether 
 ### [12. RDA genomic offset and GDI index](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/RDA_Genomic_offset.html)
 
 - RDA GEA models
-- Comparison loading and predicted RDA approaches 
 - Genomic discrepancy index (GDI) calculation for the RDA reference period model
 - Genomic offset using predicted genomic composition for present and future climate for several marker sets (all, random, random same allele frequencies, outlier LC, MC, CG, random_V2 and all_outliers)
 
