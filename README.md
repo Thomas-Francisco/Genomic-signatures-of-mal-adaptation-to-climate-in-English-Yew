@@ -72,7 +72,7 @@ Local adaptation to climate has been investigated by first establishing whether 
 - Two sets of thresholds: FDR 10% and FDR 5%
 - Graphical visualisation
 
-### [9. BAYPASS candidate detection](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/BAYPASS_candidate_detection.html)
+### [9. BayPass candidate detection](https://thomas-francisco.github.io/Genomic-signatures-of-mal-adaptation-to-climate-in-English-Yew/HTML/BAYPASS_candidate_detection.html)
 
 - Method developped by Mathieu Gautier (2015)
 - Core model used to construct the Omega matrix to account for population structure
